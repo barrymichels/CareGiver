@@ -1,0 +1,217 @@
+:root {
+    --bg-color: #1a1a1a;
+    --card-bg: #242424;
+    --primary-color: #646cff;
+    --primary-hover: #7c82ff;
+    --text-color: #ffffff;
+    --input-border: rgba(255, 255, 255, 0.1);
+    --input-border-focus: rgba(100, 108, 255, 0.4);
+    --error-color: #ff4444;
+    --success-color: #4caf50;
+    --input-bg: rgba(255, 255, 255, 0.05);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.container {
+    width: 100%;
+    max-width: 400px;
+    padding: 20px;
+}
+
+.form-container {
+    background-color: var(--card-bg);
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.tabs {
+    display: flex;
+    margin-bottom: 2rem;
+    gap: 1rem;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 0.75rem;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    font-size: 1rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.tab-btn:hover {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.tab-btn.active {
+    border-bottom-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.form {
+    display: none;
+}
+
+.form.active {
+    display: block;
+}
+
+.form-group {
+    margin-bottom: 1.25rem;
+}
+
+.password-requirements {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 0.25rem;
+    transition: color 0.2s ease;
+}
+
+input[type="email"] {
+    text-transform: lowercase;
+}
+
+input {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    color: var(--text-color);
+    font-size: 1rem;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+input:invalid {
+    box-shadow: none;
+}
+
+input:focus {
+    outline: none;
+    border-color: var(--input-border-focus);
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+input:not(:placeholder-shown):invalid {
+    border-color: var(--error-color);
+}
+
+input:not(:placeholder-shown):invalid:focus {
+    border-color: var(--input-border-focus);
+}
+
+.submit-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: var(--primary-color);
+    color: var(--text-color);
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.submit-btn:hover {
+    background-color: var(--primary-hover);
+}
+
+.error-message {
+    background-color: rgba(255, 68, 68, 0.1);
+    border: 1px solid rgba(255, 68, 68, 0.2);
+    color: #ff8080;
+}
+
+.success-message {
+    background-color: rgba(76, 175, 80, 0.1);
+    border: 1px solid rgba(76, 175, 80, 0.2);
+    color: #81c784;
+}
+
+.message {
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.setup-container {
+    text-align: center;
+}
+
+.setup-container h1 {
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+}
+
+.setup-intro {
+    margin-bottom: 2rem;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.5;
+}
+
+.setup-container form {
+    text-align: left;
+    margin-top: 2rem;
+}
+
+input[name="firstName"],
+input[name="lastName"] {
+    text-transform: capitalize;
+}
+
+input:invalid {
+    border-color: var(--input-border);
+    box-shadow: none;
+}
+
+input:not(:placeholder-shown):invalid {
+    border-color: var(--error-color);
+}
+
+.form-group input[type="text"]:invalid + .validation-message {
+    display: block;
+    color: var(--error-color);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+}
+
+.form-group input[type="text"]:valid + .validation-message {
+    display: none;
+}
+
+.validation-message {
+    display: none;
+    color: var(--error-color);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+    opacity: 0.9;
+}
+
+input:not(:placeholder-shown):invalid + .validation-message {
+    display: block;
+}
+
+input:focus + .password-requirements {
+    color: rgba(255, 255, 255, 0.7);
+} 

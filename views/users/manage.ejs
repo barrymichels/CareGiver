@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>User Management - Wayne's Schedule</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <link rel="stylesheet" href="/css/users.css">
+</head>
+<body>
+    <%- include('../partials/header', { user }) %>
+    
+    <main class="users-content">
+        <div class="users-manager">
+            <h2 class="section-title">User Management</h2>
+            
+            <div class="users-grid">
+                <div class="user-row header">
+                    <div class="user-cell">Name</div>
+                    <div class="user-cell">Email</div>
+                    <div class="user-cell">Joined</div>
+                    <div class="user-cell">Status</div>
+                    <div class="user-cell">Role</div>
+                    <div class="user-cell">Actions</div>
+                </div>
+
+                <% users.forEach(u => { %>
+                    <div class="user-row" data-user-id="<%= u.id %>">
+                        <div class="user-cell">
+                            <%= u.first_name %> <%= u.last_name %>
+                        </div>
+                        <div class="user-cell"><%= u.email %></div>
+                        <div class="user-cell">
+                            <%= new Date(u.created_at).toLocaleDateString() %>
+                        </div>
+                        <div class="user-cell">
+                            <span class="status-badge <%= u.is_active ? 'active' : 'inactive' %>">
+                                <%= u.is_active ? 'Active' : 'Inactive' %>
+                            </span>
+                        </div>
+                        <div class="user-cell">
+                            <span class="role-badge <%= u.is_admin ? 'admin' : 'user' %>">
+                                <%= u.is_admin ? 'Admin' : 'User' %>
+                            </span>
+                        </div>
+                        <div class="user-cell actions">
+                            <button class="toggle-status" data-active="<%= u.is_active ? 'true' : 'false' %>">
+                                <%= u.is_active ? 'Deactivate' : 'Activate' %>
+                            </button>
+                            <button class="toggle-role" data-admin="<%= u.is_admin ? 'true' : 'false' %>">
+                                <%= u.is_admin ? 'Remove Admin' : 'Make Admin' %>
+                            </button>
+                        </div>
+                    </div>
+                <% }) %>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/header.js"></script>
+    <script src="/js/dashboard.js"></script>
+    <script src="/js/users.js"></script>
+</body>
+</html> 

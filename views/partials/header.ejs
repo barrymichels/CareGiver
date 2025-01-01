@@ -1,0 +1,20 @@
+<header class="main-header">
+    <div class="header-content">
+        <a href="/" class="site-title">Wayne's Schedule</a>
+        <div class="profile-menu">
+            <button id="profileButton" class="profile-button">
+                <div class="profile-icon">
+                    <%= user.first_name[0] + user.last_name[0] %>
+                </div>
+            </button>
+            <div class="dropdown-menu" id="profileMenu">
+                <a href="/profile" class="menu-item">Profile</a>
+                <% if (user.is_admin) { %>
+                    <a href="/admin" class="menu-item">Admin Panel</a>
+                    <a href="/users/manage" class="menu-item">Manage Users</a>
+                <% } %>
+                <a href="/logout" class="menu-item">Logout</a>
+            </div>
+        </div>
+    </div>
+</header> 

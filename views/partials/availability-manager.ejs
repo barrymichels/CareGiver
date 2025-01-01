@@ -1,0 +1,57 @@
+<div class="availability-section">
+    <h3 class="section-title">My Availability for Next Week</h3>
+    <div class="availability-grid">
+        <% 
+        const nextWeekStart = new Date(weekStart);
+        nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+        
+        const nextWeekDates = days.map((day, index) => {
+            const date = new Date(nextWeekStart);
+            date.setDate(date.getDate() + index);
+            return {
+                name: day,
+                date: date,
+                formatted: date.toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric'
+                })
+            };
+        });
+        %>
+        
+        <% nextWeekDates.forEach(day => { %>
+            <div class="availability-day">
+                <div class="day-header">
+                    <div class="day-name"><%= day.name %></div>
+                    <div class="day-date"><%= day.formatted %></div>
+                </div>
+                <div class="time-slots">
+                    <% timeSlots.forEach(slot => { %>
+                        <% 
+                        const isAvailable = (userAvailability.find(a => 
+                            a.day_date === day.date.toISOString().split('T')[0] && 
+                            a.time_slot === slot.time
+                        )?.is_available === 1) ?? true;
+                        %>
+                        <div class="availability-slot">
+                            <label class="slot-toggle">
+                                <input type="checkbox" 
+                                       name="availability" 
+                                       data-date="<%= day.date.toISOString().split('T')[0] %>"
+                                       data-time="<%= slot.time %>"
+                                       <%= isAvailable ? 'checked' : '' %>>
+                                <span class="slot-time"><%= slot.time %></span>
+                                <span class="slot-status" data-available="<%= isAvailable %>">
+                                    <%= isAvailable ? 'Available' : 'Unavailable' %>
+                                </span>
+                            </label>
+                        </div>
+                    <% }) %>
+                </div>
+            </div>
+        <% }) %>
+    </div>
+    <div class="availability-actions">
+        <button type="button" id="saveAvailability" class="action-button">Save Availability</button>
+    </div>
+</div> 

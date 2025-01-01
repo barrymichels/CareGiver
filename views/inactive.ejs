@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Account Inactive - Wayne's Schedule</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <main class="inactive-content">
+        <div class="message-card">
+            <h1>Account Inactive</h1>
+            <p>Your account is currently inactive. Please contact an administrator to activate your account.</p>
+            <div class="actions">
+                <a href="/logout" class="action-button">Logout</a>
+            </div>
+        </div>
+    </main>
+
+    <style>
+        .inactive-content {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .message-card {
+            background-color: var(--card-bg);
+            padding: 2rem;
+            border-radius: 8px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .message-card h1 {
+            margin: 0 0 1rem 0;
+            color: var(--text-color);
+        }
+
+        .message-card p {
+            color: var(--text-color);
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+
+        .actions {
+            margin-top: 2rem;
+        }
+    </style>
+</body>
+</html> 

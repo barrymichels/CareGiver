@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Admin - Schedule Management</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+    <%- include('partials/header', { user }) %>
+    
+    <main class="admin-content">
+        <div class="schedule-manager">
+            <h2 class="section-title">Next Week's Schedule</h2>
+            
+            <div class="schedule-grid">
+                <% 
+                const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                const timeSlots = [
+                    { time: '8:00am', label: 'Morning' },
+                    { time: '12:30pm', label: 'Afternoon' },
+                    { time: '5:00pm', label: 'Evening' },
+                    { time: '9:30pm', label: 'Night' }
+                ];
+
+                const weekDates = days.map((day, index) => {
+                    const date = new Date(nextWeekStart);
+                    date.setDate(date.getDate() + index);
+                    return {
+                        name: day,
+                        date: date,
+                        formatted: date.toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric'
+                        })
+                    };
+                });
+                %>
+                
+                <% weekDates.forEach(day => { %>
+                    <div class="schedule-day">
+                        <div class="day-header">
+                            <div class="day-name"><%= day.name %></div>
+                            <div class="day-date"><%= day.formatted %></div>
+                        </div>
+                        <div class="time-slots">
+                            <% timeSlots.forEach(slot => { %>
+                                <% 
+                                const assignment = assignments.find(a => 
+                                    a.day_date === day.date.toISOString().split('T')[0] && 
+                                    a.time_slot === slot.time
+                                );
+                                
+                                const availableUsers = availability
+                                    .filter(a => 
+                                        a.day_date === day.date.toISOString().split('T')[0] && 
+                                        a.time_slot === slot.time
+                                    )
+                                    .map(a => ({
+                                        id: a.user_id,
+                                        firstName: a.first_name,
+                                        lastName: a.last_name
+                                    }));
+                                %>
+                                <div class="schedule-slot">
+                                    <div class="slot-header">
+                                        <span class="slot-time"><%= slot.time %></span>
+                                        <span class="available-count">
+                                            <%= availableUsers.length %> Available
+                                        </span>
+                                    </div>
+                                    <div class="slot-content">
+                                        <div class="user-options">
+                                            <label class="user-option">
+                                                <input type="radio" 
+                                                       name="slot-<%= day.date.toISOString().split('T')[0] %>-<%= slot.time %>" 
+                                                       value=""
+                                                       <%= !assignment ? 'checked' : '' %>>
+                                                <span class="option-label">Unassigned</span>
+                                            </label>
+                                            <% availableUsers.forEach(user => { %>
+                                                <label class="user-option">
+                                                    <input type="radio" 
+                                                           name="slot-<%= day.date.toISOString().split('T')[0] %>-<%= slot.time %>" 
+                                                           value="<%= user.id %>"
+                                                           data-date="<%= day.date.toISOString().split('T')[0] %>"
+                                                           data-time="<%= slot.time %>"
+                                                           <%= assignment && assignment.user_id === user.id ? 'checked' : '' %>>
+                                                    <span class="option-label"><%= user.firstName %></span>
+                                                </label>
+                                            <% }) %>
+                                        </div>
+                                    </div>
+                                </div>
+                            <% }) %>
+                        </div>
+                    </div>
+                <% }) %>
+            </div>
+
+            <div class="user-filter">
+                <h3 class="section-subtitle">Filter Schedule</h3>
+                <div class="user-list">
+                    <button class="user-filter-btn" data-filter="unassigned">
+                        <span class="user-name">Show Unassigned</span>
+                    </button>
+                    <% 
+                    const uniqueUsers = [...new Set([
+                        ...assignments.map(a => a.user_id),
+                        ...availability.map(a => a.user_id)
+                    ])].map(id => {
+                        const user = users.find(u => u.id === id);
+                        const count = assignments.filter(a => a.user_id === id).length;
+                        return { id, firstName: user.first_name, count };
+                    });
+                    %>
+                    <% uniqueUsers.forEach(user => { %>
+                        <button class="user-filter-btn" data-user-id="<%= user.id %>">
+                            <span class="user-name"><%= user.firstName %></span>
+                            <span class="slot-count"><%= user.count %></span>
+                        </button>
+                    <% }) %>
+                </div>
+            </div>
+
+            <div class="schedule-actions">
+                <button type="button" id="saveSchedule" class="action-button">Save Schedule</button>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/header.js"></script>
+    <script src="/js/dashboard.js"></script>
+    <script src="/js/admin.js"></script>
+</body>
+</html> 

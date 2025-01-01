@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Admin Account</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="form-container setup-container">
+            <h1>Welcome!</h1>
+            <p class="setup-intro">
+                This appears to be your first time running the application. 
+                Please create an admin account to get started.
+            </p>
+
+            <form id="setup-form" class="form active" action="/setup" method="POST">
+                <div class="form-group">
+                    <input type="text" name="firstName" placeholder="First name" required
+                           pattern="[A-Za-z\-']+" title="Letters, hyphens, and apostrophes only">
+                </div>
+                <div class="form-group">
+                    <input type="text" name="lastName" placeholder="Last name" required
+                           pattern="[A-Za-z\-']+" title="Letters, hyphens, and apostrophes only">
+                </div>
+                <div class="form-group">
+                    <input type="email" name="email" placeholder="Email address" required>
+                </div>
+                <div class="form-group">
+                    <input type="password" name="password" 
+                           placeholder="Password" minlength="8" required>
+                    <div class="password-requirements">
+                        Password must be at least 8 characters long
+                    </div>
+                </div>
+                <div class="form-group">
+                    <input type="password" name="confirmPassword" 
+                           placeholder="Confirm password" minlength="8" required>
+                </div>
+                <button type="submit" class="submit-btn">Create Admin Account</button>
+            </form>
+        </div>
+    </div>
+    <script src="/js/setup.js"></script>
+</body>
+</html> 
