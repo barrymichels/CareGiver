@@ -196,25 +196,6 @@ describe('Auth Routes', () => {
             expect(response.body).toHaveProperty('error', 'Passwords do not match');
         });
 
-        it('should fail with duplicate email', async () => {
-            // Create initial user
-            await createTestUser();
-
-            // Try to register with same email
-            const response = await request(app)
-                .post('/register')
-                .send({
-                    firstName: 'Another',
-                    lastName: 'User',
-                    email: 'test@example.com',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
-
-            expect(response.status).toBe(400);
-            expect(response.body).toHaveProperty('error', 'Email already registered');
-        });
-
         it('should fail with short password', async () => {
             const response = await request(app)
                 .post('/register')

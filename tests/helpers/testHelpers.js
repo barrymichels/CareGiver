@@ -1,11 +1,14 @@
 const bcrypt = require('bcrypt');
 const { testDb } = require('../../config/test.db');
 
+let userCounter = 0;
+
 async function createTestUser(userData = {}) {
+    userCounter++;
     const defaultUser = {
         first_name: 'Test',
         last_name: 'User',
-        email: 'test@example.com',
+        email: `test${userCounter}@example.com`,
         password: await bcrypt.hash('password123', 10),
         is_admin: 0,
         is_active: 1
@@ -48,8 +51,39 @@ async function clearTestDb() {
     }
 }
 
+async function createAvailability(userId, slots) {
+    for (const slot of slots) {
+        await new Promise((resolve, reject) => {
+            testDb.run(
+                `INSERT INTO availability (user_id, day_date, time_slot, is_available)
+                 VALUES (?, ?, ?, ?)`,
+                [userId, slot.date, slot.time, slot.isAvailable ? 1 : 0],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+    }
+}
+
+async function getAvailability(userId) {
+    return new Promise((resolve, reject) => {
+        testDb.all(
+            'SELECT * FROM availability WHERE user_id = ?',
+            [userId],
+            (err, rows) => {
+                if (err) reject(err);
+                resolve(rows || []);
+            }
+        );
+    });
+}
+
 module.exports = {
     createTestUser,
     getUserByEmail,
-    clearTestDb
+    clearTestDb,
+    createAvailability,
+    getAvailability
 }; 

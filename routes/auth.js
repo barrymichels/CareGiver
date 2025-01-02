@@ -61,21 +61,34 @@ module.exports = function(db) {
 
             const hashedPassword = await bcrypt.hash(password, 10);
             
-            db.run(
-                'INSERT INTO users (first_name, last_name, email, password) VALUES (?, ?, ?, ?)',
-                [firstName.trim(), lastName.trim(), email.toLowerCase(), hashedPassword],
-                (err) => {
-                    if (err) {
-                        if (err.message.includes('UNIQUE constraint failed')) {
-                            return res.status(400).json({ error: 'Email already registered' });
-                        }
-                        return res.status(500).json({ error: 'Error creating user' });
+            // First check if email exists
+            const existingUser = await new Promise((resolve, reject) => {
+                db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+
+            if (existingUser) {
+                return res.status(400).json({ error: 'Email already registered' });
+            }
+
+            // If email doesn't exist, proceed with insert
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO users (first_name, last_name, email, password) VALUES (?, ?, ?, ?)',
+                    [firstName.trim(), lastName.trim(), email.toLowerCase(), hashedPassword],
+                    function(err) {
+                        if (err) reject(err);
+                        resolve();
                     }
-                    res.json({ message: 'Registration successful! You can now log in.' });
-                }
-            );
+                );
+            });
+
+            return res.json({ message: 'Registration successful! You can now log in.' });
         } catch (error) {
-            res.status(500).json({ error: 'Server error' });
+            console.error('Registration error:', error);
+            return res.status(500).json({ error: 'Server error' });
         }
     });
 

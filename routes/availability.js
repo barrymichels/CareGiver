@@ -46,7 +46,7 @@ module.exports = function(db) {
                          VALUES (?, ?, ?, ?)
                          ON CONFLICT(user_id, day_date, time_slot)
                          DO UPDATE SET is_available = ?`,
-                        [req.user.id, slot.date, slot.time, slot.isAvailable, slot.isAvailable],
+                        [req.user.id, slot.date, slot.time, slot.isAvailable ? 1 : 0, slot.isAvailable ? 1 : 0],
                         (err) => {
                             if (err) reject(err);
                             resolve();
