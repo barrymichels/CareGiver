@@ -88,7 +88,10 @@ describe('Auth Middleware', () => {
             isAdmin(mockReq, mockRes, nextFunction);
             
             expect(mockRes.status).toHaveBeenCalledWith(403);
-            expect(mockRes.json).toHaveBeenCalledWith({ error: 'Admin access required' });
+            expect(mockRes.json).toHaveBeenCalledWith({ 
+                error: 'Admin access required',
+                user: mockReq.user 
+            });
             expect(nextFunction).not.toHaveBeenCalled();
         });
 
@@ -98,7 +101,10 @@ describe('Auth Middleware', () => {
             isAdmin(mockReq, mockRes, nextFunction);
             
             expect(mockRes.status).toHaveBeenCalledWith(403);
-            expect(mockRes.json).toHaveBeenCalledWith({ error: 'Admin access required' });
+            expect(mockRes.json).toHaveBeenCalledWith({ 
+                error: 'Admin access required',
+                user: undefined 
+            });
             expect(nextFunction).not.toHaveBeenCalled();
         });
     });
