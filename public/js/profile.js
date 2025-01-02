@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const profileForm = document.getElementById('profileForm');
-    const passwordForm = document.getElementById('passwordForm');
+    const profileForm = document.getElementById('profile-form');
+    const passwordForm = document.getElementById('password-form');
     const changePasswordBtn = document.getElementById('changePasswordBtn');
     const passwordModal = document.getElementById('passwordModal');
     const closeModalBtn = document.querySelector('.close-modal');
@@ -12,23 +12,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = Object.fromEntries(formData);
 
         try {
-            const response = await fetch('/profile/update', {
-                method: 'POST',
+            const response = await fetch('/profile', {
+                method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(data),
             });
 
-            const responseData = await response.json();
-
             if (response.ok) {
-                showMessage(profileForm, responseData.message, 'success');
+                showToast('Profile updated successfully', 'success');
             } else {
-                showMessage(profileForm, responseData.error, 'error');
+                const responseData = await response.json();
+                showToast(responseData.error || 'Failed to update profile', 'error');
             }
         } catch (error) {
-            showMessage(profileForm, 'An error occurred', 'error');
+            showToast('An error occurred', 'error');
         }
     });
 
@@ -39,40 +38,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = Object.fromEntries(formData);
 
         if (data.newPassword !== data.confirmPassword) {
-            showMessage(passwordForm, 'Passwords do not match', 'error');
+            showToast('Passwords do not match', 'error');
             return;
         }
 
         try {
             const response = await fetch('/profile/password', {
-                method: 'POST',
+                method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
                     currentPassword: data.currentPassword,
                     newPassword: data.newPassword,
+                    confirmPassword: data.confirmPassword
                 }),
             });
 
-            const responseData = await response.json();
-
             if (response.ok) {
-                showMessage(passwordForm, responseData.message, 'success');
+                showToast('Password updated successfully', 'success');
                 passwordForm.reset();
-                setTimeout(() => {
-                    passwordModal.classList.remove('active');
-                }, 2000);
+                passwordModal.classList.remove('active');
             } else {
-                showMessage(passwordForm, responseData.error, 'error');
+                const responseData = await response.json();
+                showToast(responseData.error || 'Failed to update password', 'error');
             }
         } catch (error) {
-            showMessage(passwordForm, 'An error occurred', 'error');
+            showToast('An error occurred', 'error');
         }
     });
 
     // Modal handling
-    changePasswordBtn.addEventListener('click', () => {
+    changePasswordBtn.addEventListener('click', (e) => {
+        e.preventDefault();
         passwordModal.classList.add('active');
     });
 
@@ -88,17 +86,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function showMessage(form, message, type) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type}-message`;
-        messageDiv.textContent = message;
+    // Toast notification function
+    function showToast(message, type = 'success') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
         
-        const existingMessage = form.querySelector('.message');
-        if (existingMessage) {
-            existingMessage.remove();
-        }
-        
-        form.insertBefore(messageDiv, form.firstChild);
-        setTimeout(() => messageDiv.remove(), 5000);
+        // Remove toast after animation
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
     }
 }); 

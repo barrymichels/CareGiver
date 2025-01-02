@@ -15,24 +15,39 @@ module.exports = function(db) {
                     'SELECT first_name, last_name, email FROM users WHERE id = ?',
                     [req.user.id],
                     (err, row) => {
-                        if (err) reject(err);
+                        if (err) {
+                            console.error('Database error:', err);
+                            reject(err);
+                            return;
+                        }
+                        if (!row) {
+                            reject(new Error('User not found'));
+                            return;
+                        }
                         resolve(row);
                     }
                 );
             });
 
-            if (!user) {
-                return res.status(404).json({ error: 'User not found' });
-            }
-
-            res.json({
-                firstName: user.first_name,
-                lastName: user.last_name,
-                email: user.email
+            return res.render('profile', { 
+                user: {
+                    ...req.user,
+                    first_name: user.first_name,
+                    last_name: user.last_name,
+                    email: user.email
+                }
             });
         } catch (error) {
             console.error('Error getting profile:', error);
-            res.status(500).json({ error: 'Server error' });
+            res.status(500);
+            
+            // Send error response
+            if (req.accepts('html')) {
+                res.send('<div class="error">Server error</div>');
+            } else {
+                res.json({ error: 'Server error' });
+            }
+            return;
         }
     });
 

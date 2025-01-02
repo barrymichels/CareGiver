@@ -2,12 +2,17 @@ const request = require('supertest');
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
+const path = require('path');
 const { testDb, initializeTestDb } = require('../../config/test.db');
 const { createTestUser, clearTestDb, getUserById } = require('../helpers/testHelpers');
 const bcrypt = require('bcrypt');
 
 // Create express app for testing
 const app = express();
+
+// Set up view engine for testing
+app.set('views', path.join(__dirname, '../../views'));
+app.set('view engine', 'ejs');
 
 // Create a modifiable mock auth middleware
 const createMockAuth = (userId) => (req, res, next) => {
@@ -38,13 +43,9 @@ describe('Profile Routes', () => {
 
     beforeEach(async () => {
         await clearTestDb();
-        // Create test user and store the full user object
         testUser = await createTestUser();
-        
-        // Create fresh instances for each test
         mockAuth = (req, res, next) => {
             req.isAuthenticated = () => true;
-            // Make sure we pass the full user object
             req.user = {
                 id: testUser.id,
                 is_active: true,
@@ -54,23 +55,21 @@ describe('Profile Routes', () => {
             };
             next();
         };
-
-        // Reset the app routes
         app._router.stack = app._router.stack.filter(layer => !layer.route || layer.route.path !== '/profile');
         app.use('/profile', mockAuth, profileRoutes);
     });
 
     describe('GET /profile', () => {
-        it('should return user profile data', async () => {
+        it('should render profile page with user data', async () => {
             const response = await request(app)
-                .get('/profile');
+                .get('/profile')
+                .expect('Content-Type', /html/)
+                .expect(200);
 
-            expect(response.status).toBe(200);
-            expect(response.body).toMatchObject({
-                firstName: testUser.first_name,
-                lastName: testUser.last_name,
-                email: testUser.email
-            });
+            // Check that response contains user data
+            expect(response.text).toContain(testUser.first_name);
+            expect(response.text).toContain(testUser.last_name);
+            expect(response.text).toContain(testUser.email);
         });
     });
 
@@ -84,9 +83,9 @@ describe('Profile Routes', () => {
 
             const response = await request(app)
                 .put('/profile')
-                .send(updates);
+                .send(updates)
+                .expect(200);
 
-            expect(response.status).toBe(200);
             expect(response.body).toHaveProperty('message', 'Profile updated successfully');
 
             // Verify the updates in the database
