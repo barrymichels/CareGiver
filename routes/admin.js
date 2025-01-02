@@ -113,26 +113,45 @@ module.exports = function(db) {
             });
 
             for (const assignment of assignments) {
-                await new Promise((resolve, reject) => {
-                    db.run(
-                        `INSERT INTO assignments (user_id, day_date, time_slot, assigned_by)
-                         VALUES (?, ?, ?, ?)
-                         ON CONFLICT(day_date, time_slot)
-                         DO UPDATE SET user_id = ?, assigned_by = ?`,
-                        [
-                            assignment.userId,
-                            assignment.date,
-                            assignment.time,
-                            req.user.id,
-                            assignment.userId,
-                            req.user.id
-                        ],
-                        (err) => {
-                            if (err) reject(err);
-                            resolve();
-                        }
-                    );
-                });
+                if (assignment.unassign) {
+                    // Delete the assignment if unassign flag is true
+                    await new Promise((resolve, reject) => {
+                        db.run(
+                            `DELETE FROM assignments 
+                             WHERE day_date = ? AND time_slot = ?`,
+                            [
+                                assignment.date,
+                                assignment.time
+                            ],
+                            (err) => {
+                                if (err) reject(err);
+                                resolve();
+                            }
+                        );
+                    });
+                } else {
+                    // Insert or update assignment as before
+                    await new Promise((resolve, reject) => {
+                        db.run(
+                            `INSERT INTO assignments (user_id, day_date, time_slot, assigned_by)
+                             VALUES (?, ?, ?, ?)
+                             ON CONFLICT(day_date, time_slot)
+                             DO UPDATE SET user_id = ?, assigned_by = ?`,
+                            [
+                                assignment.userId,
+                                assignment.date,
+                                assignment.time,
+                                req.user.id,
+                                assignment.userId,
+                                req.user.id
+                            ],
+                            (err) => {
+                                if (err) reject(err);
+                                resolve();
+                            }
+                        );
+                    });
+                }
             }
 
             await new Promise((resolve, reject) => {

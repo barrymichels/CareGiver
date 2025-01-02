@@ -63,12 +63,18 @@
                                         firstName: a.first_name,
                                         lastName: a.last_name
                                     }));
+
+                                // Check if assigned user is no longer available
+                                const hasConflict = assignment && !availableUsers.some(u => u.id === assignment.user_id);
                                 %>
-                                <div class="schedule-slot">
+                                <div class="schedule-slot <%= hasConflict ? 'has-conflict' : '' %>">
                                     <div class="slot-header">
                                         <span class="slot-time"><%= slot.time %></span>
                                         <span class="available-count">
                                             <%= availableUsers.length %> Available
+                                            <% if (hasConflict) { %>
+                                                <span class="conflict-indicator">Conflict</span>
+                                            <% } %>
                                         </span>
                                     </div>
                                     <div class="slot-content">
@@ -77,9 +83,22 @@
                                                 <input type="radio" 
                                                        name="slot-<%= day.date.toISOString().split('T')[0] %>-<%= slot.time %>" 
                                                        value=""
+                                                       data-date="<%= day.date.toISOString().split('T')[0] %>"
+                                                       data-time="<%= slot.time %>"
                                                        <%= !assignment ? 'checked' : '' %>>
                                                 <span class="option-label">Unassigned</span>
                                             </label>
+                                            <% if (hasConflict) { %>
+                                                <label class="user-option conflict">
+                                                    <input type="radio" 
+                                                           name="slot-<%= day.date.toISOString().split('T')[0] %>-<%= slot.time %>" 
+                                                           value="<%= assignment.user_id %>"
+                                                           data-date="<%= day.date.toISOString().split('T')[0] %>"
+                                                           data-time="<%= slot.time %>"
+                                                           checked>
+                                                    <span class="option-label"><%= assignment.first_name %></span>
+                                                </label>
+                                            <% } %>
                                             <% availableUsers.forEach(user => { %>
                                                 <label class="user-option">
                                                     <input type="radio" 
@@ -87,7 +106,7 @@
                                                            value="<%= user.id %>"
                                                            data-date="<%= day.date.toISOString().split('T')[0] %>"
                                                            data-time="<%= slot.time %>"
-                                                           <%= assignment && assignment.user_id === user.id ? 'checked' : '' %>>
+                                                           <%= !hasConflict && assignment && assignment.user_id === user.id ? 'checked' : '' %>>
                                                     <span class="option-label"><%= user.firstName %></span>
                                                 </label>
                                             <% }) %>

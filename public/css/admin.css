@@ -65,6 +65,27 @@
     background-color: transparent;
 }
 
+.schedule-slot.has-conflict {
+    border: 1px solid #ff4444;
+    border-radius: 4px;
+}
+
+.conflict-indicator {
+    color: #ff4444;
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+    font-weight: 500;
+}
+
+.user-option.conflict {
+    background-color: rgba(255, 68, 68, 0.1);
+    border: 1px solid #ff4444;
+}
+
+.user-option.conflict input[type="radio"]:checked + .option-label {
+    color: #ff4444;
+}
+
 .slot-header {
     padding: 0.5rem;
     background-color: var(--input-bg);

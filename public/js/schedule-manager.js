@@ -47,12 +47,22 @@ document.addEventListener('DOMContentLoaded', () => {
             // Handle save button click
             saveButton.addEventListener('click', async () => {
                 const assignments = [];
+                // Get all radio groups
+                const slotGroups = new Set();
                 radioButtons.forEach(radio => {
-                    if (radio.checked && radio.value && radio.dataset.date) {
+                    slotGroups.add(radio.name);
+                });
+
+                // For each slot group, find the checked radio and include it in assignments
+                slotGroups.forEach(groupName => {
+                    const checkedRadio = document.querySelector(`input[name="${groupName}"]:checked`);
+                    if (checkedRadio && checkedRadio.dataset.date) {
                         assignments.push({
-                            userId: parseInt(radio.value),
-                            date: radio.dataset.date,
-                            time: radio.dataset.time
+                            userId: checkedRadio.value ? parseInt(checkedRadio.value) : null,
+                            date: checkedRadio.dataset.date,
+                            time: checkedRadio.dataset.time,
+                            hasConflict: checkedRadio.closest('.user-option')?.classList.contains('conflict') || false,
+                            unassign: !checkedRadio.value // Add flag for unassignment
                         });
                     }
                 });
@@ -70,13 +80,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         isDirty = false;
                         saveButton.disabled = true;
                         updateSlotCounts();
-                        showToast('Schedule saved successfully');
+                        
+                        // Show warning if there are conflicts
+                        const conflictCount = assignments.filter(a => a.hasConflict).length;
+                        if (conflictCount > 0) {
+                            await showToast(`Schedule saved with ${conflictCount} availability conflict${conflictCount > 1 ? 's' : ''}`, 'warning');
+                        } else {
+                            await showToast('Schedule saved successfully');
+                        }
+                        // Reload the page after toast
+                        window.location.reload();
                     } else {
-                        showToast('Failed to save schedule', 'error');
+                        await showToast('Failed to save schedule', 'error');
                     }
                 } catch (error) {
                     console.error('Error saving schedule:', error);
-                    showToast('An error occurred while saving', 'error');
+                    await showToast('An error occurred while saving', 'error');
                 }
             });
         }
@@ -156,14 +175,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        toast.remove();
-    }, 3000);
+    return new Promise(resolve => {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        // Add warning color styles
+        if (type === 'warning') {
+            toast.style.backgroundColor = 'rgba(255, 193, 7, 0.9)';
+            toast.style.color = '#000';
+        }
+        
+        setTimeout(() => {
+            toast.remove();
+            resolve();
+        }, 3000);
+    });
 }
 
 function showUnsavedChangesModal(targetHref) {
