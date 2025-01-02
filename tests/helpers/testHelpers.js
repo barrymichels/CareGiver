@@ -70,11 +70,56 @@ async function createAvailability(userId, slots) {
 async function getAvailability(userId) {
     return new Promise((resolve, reject) => {
         testDb.all(
-            'SELECT * FROM availability WHERE user_id = ?',
+            `SELECT * FROM availability 
+             WHERE user_id = ? 
+             ORDER BY day_date ASC`,
             [userId],
             (err, rows) => {
-                if (err) reject(err);
-                resolve(rows || []);
+                if (err) {
+                    console.error('Error getting availability:', err);
+                    reject(err);
+                    return;
+                }
+                // Convert SQLite integer to boolean and sort by time
+                const converted = (rows || [])
+                    .map(row => ({
+                        ...row,
+                        is_available: row.is_available === 1
+                    }))
+                    .sort((a, b) => {
+                        // Convert time to 24-hour format for sorting
+                        const timeToMinutes = (timeStr) => {
+                            const [time, period] = timeStr.split(/(?=[ap]m)/i);
+                            const [hours, minutes] = time.split(':').map(Number);
+                            const isPM = period.toLowerCase() === 'pm';
+                            
+                            let totalHours = hours;
+                            if (isPM && hours !== 12) totalHours += 12;
+                            if (!isPM && hours === 12) totalHours = 0;
+                            
+                            return totalHours * 60 + minutes;
+                        };
+
+                        return timeToMinutes(a.time_slot) - timeToMinutes(b.time_slot);
+                    });
+                resolve(converted);
+            }
+        );
+    });
+}
+
+async function getPreferences(userId) {
+    return new Promise((resolve, reject) => {
+        testDb.get(
+            'SELECT preferences FROM user_preferences WHERE user_id = ?',
+            [userId],
+            (err, row) => {
+                if (err) {
+                    console.error('Error getting preferences:', err);
+                    reject(err);
+                    return;
+                }
+                resolve(row);
             }
         );
     });
@@ -85,5 +130,6 @@ module.exports = {
     getUserByEmail,
     clearTestDb,
     createAvailability,
-    getAvailability
+    getAvailability,
+    getPreferences
 }; 

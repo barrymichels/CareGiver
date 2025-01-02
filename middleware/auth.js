@@ -1,31 +1,22 @@
 function isAuthenticated(req, res, next) {
-  if (req.isAuthenticated()) {
-    if (!req.user.is_active) {
-      if (req.path === '/inactive') {
+    if (req.isAuthenticated()) {
         return next();
-      }
-      if (req.path === '/logout') {
-        return next();
-      }
-      return res.redirect('/inactive');
     }
-    return next();
-  }
-  res.redirect('/login');
+    res.redirect('/login');
 }
 
 function isActive(req, res, next) {
-  if (req.user?.is_active) {
-    return next();
-  }
-  res.redirect('/inactive');
+    if (req.user && req.user.is_active) {
+        return next();
+    }
+    res.status(403).json({ error: 'Account not activated' });
 }
 
 function isAdmin(req, res, next) {
-    if (req.user?.is_admin) {
+    if (req.user && req.user.is_admin) {
         return next();
     }
-    res.status(403).send('Unauthorized');
+    res.status(403).json({ error: 'Admin access required' });
 }
 
 module.exports = {
