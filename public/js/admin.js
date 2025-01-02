@@ -3,6 +3,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const radioButtons = document.querySelectorAll('input[type="radio"]');
     const filterButtons = document.querySelectorAll('.user-filter-btn');
     const slotCounts = new Map(); // Track slot counts per user
+    let isDirty = false;
+
+    // Disable save button initially
+    saveButton.disabled = true;
+
+    // Track changes to radio buttons instead of assignment-select
+    radioButtons.forEach(radio => {
+        radio.addEventListener('change', () => {
+            isDirty = true;
+            saveButton.disabled = false;
+        });
+    });
 
     // Update slot counts
     function updateSlotCounts() {
@@ -104,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Save functionality
+    // Handle save button click
     saveButton.addEventListener('click', async () => {
         const assignments = [];
         radioButtons.forEach(radio => {
@@ -127,13 +139,43 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (response.ok) {
-                showMessage('Schedule updated successfully', 'success');
+                // On successful save
+                isDirty = false;
+                saveButton.disabled = true;
                 updateSlotCounts(); // Update counts after save
+                
+                // Show success message
+                const toast = document.createElement('div');
+                toast.className = 'toast success';
+                toast.textContent = 'Schedule saved successfully';
+                document.body.appendChild(toast);
+                
+                // Remove toast after 3 seconds
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
             } else {
-                showMessage('Failed to update schedule', 'error');
+                // Show error message
+                const toast = document.createElement('div');
+                toast.className = 'toast error';
+                toast.textContent = 'Failed to save schedule';
+                document.body.appendChild(toast);
+                
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
             }
         } catch (error) {
-            showMessage('An error occurred', 'error');
+            console.error('Error saving schedule:', error);
+            // Show error message
+            const toast = document.createElement('div');
+            toast.className = 'toast error';
+            toast.textContent = 'An error occurred while saving';
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
         }
     });
 
@@ -147,4 +189,33 @@ document.addEventListener('DOMContentLoaded', () => {
         
         setTimeout(() => messageDiv.remove(), 3000);
     }
+
+    // Handle page navigation
+    window.addEventListener('beforeunload', (e) => {
+        if (isDirty) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+
+    // Handle navigation within the app
+    document.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', (e) => {
+            if (isDirty) {
+                e.preventDefault();
+                const targetHref = e.currentTarget.href;
+                const modal = document.getElementById('unsavedChangesModal');
+                modal.style.display = 'flex';
+                
+                document.getElementById('stayButton').onclick = () => {
+                    modal.style.display = 'none';
+                };
+                
+                document.getElementById('leaveButton').onclick = () => {
+                    isDirty = false;
+                    window.location.href = targetHref;
+                };
+            }
+        });
+    });
 }); 

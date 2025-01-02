@@ -15,6 +15,11 @@ async function createTestUser(userData = {}) {
     };
 
     const user = { ...defaultUser, ...userData };
+    
+    // Ensure password is hashed if it was provided in userData
+    if (userData.password) {
+        user.password = await bcrypt.hash(userData.password, 10);
+    }
 
     return new Promise((resolve, reject) => {
         testDb.run(
@@ -125,11 +130,27 @@ async function getPreferences(userId) {
     });
 }
 
+// Add a helper to verify user updates
+async function getUserById(userId) {
+    return new Promise((resolve, reject) => {
+        testDb.get(
+            'SELECT id, first_name, last_name, email, password, is_active, is_admin FROM users WHERE id = ?',
+            [userId],
+            (err, row) => {
+                if (err) reject(err);
+                if (!row) reject(new Error('User not found'));
+                resolve(row);
+            }
+        );
+    });
+}
+
 module.exports = {
     createTestUser,
     getUserByEmail,
     clearTestDb,
     createAvailability,
     getAvailability,
-    getPreferences
+    getPreferences,
+    getUserById
 }; 

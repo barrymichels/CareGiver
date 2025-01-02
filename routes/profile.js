@@ -1,24 +1,70 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const { isAuthenticated } = require('../middleware/auth');
+const { isAuthenticated, isActive } = require('../middleware/auth');
+const DatabaseHelper = require('../utils/dbHelper');
 
 module.exports = function(db) {
-    // Get profile page
-    router.get('/', isAuthenticated, (req, res) => {
-        res.render('profile', { user: req.user });
+    const dbHelper = new DatabaseHelper(db);
+
+    // Get profile
+    router.get('/', isAuthenticated, isActive, async (req, res) => {
+        try {
+            const user = await new Promise((resolve, reject) => {
+                db.get(
+                    'SELECT first_name, last_name, email FROM users WHERE id = ?',
+                    [req.user.id],
+                    (err, row) => {
+                        if (err) reject(err);
+                        resolve(row);
+                    }
+                );
+            });
+
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+
+            res.json({
+                firstName: user.first_name,
+                lastName: user.last_name,
+                email: user.email
+            });
+        } catch (error) {
+            console.error('Error getting profile:', error);
+            res.status(500).json({ error: 'Server error' });
+        }
     });
 
-    // Update profile info
-    router.post('/update', isAuthenticated, async (req, res) => {
+    // Update profile
+    router.put('/', isAuthenticated, isActive, async (req, res) => {
         const { firstName, lastName, email } = req.body;
-        
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
+
         try {
-            // Check if email is taken by another user
+            // First verify user exists
+            const user = await new Promise((resolve, reject) => {
+                db.get(
+                    'SELECT id FROM users WHERE id = ?',
+                    [req.user.id],
+                    (err, row) => {
+                        if (err) reject(err);
+                        if (!row) reject(new Error('User not found'));
+                        resolve(row);
+                    }
+                );
+            });
+
+            // Check for duplicate email
             const existingUser = await new Promise((resolve, reject) => {
                 db.get(
                     'SELECT id FROM users WHERE email = ? AND id != ?',
-                    [email.toLowerCase(), req.user.id],
+                    [email, req.user.id],
                     (err, row) => {
                         if (err) reject(err);
                         resolve(row);
@@ -30,32 +76,55 @@ module.exports = function(db) {
                 return res.status(400).json({ error: 'Email already in use' });
             }
 
-            // Update user info
-            await new Promise((resolve, reject) => {
-                db.run(
-                    'UPDATE users SET first_name = ?, last_name = ?, email = ? WHERE id = ?',
-                    [firstName.trim(), lastName.trim(), email.toLowerCase(), req.user.id],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
-            });
+            await dbHelper.runWithRetry(
+                `UPDATE users 
+                 SET first_name = ?, last_name = ?, email = ?
+                 WHERE id = ?`,
+                [firstName, lastName, email, req.user.id]
+            );
 
             res.json({ message: 'Profile updated successfully' });
         } catch (error) {
-            res.status(500).json({ error: 'Server error' });
+            console.error('Error updating profile:', error);
+            if (error.message === 'User not found') {
+                res.status(404).json({ error: 'User not found' });
+            } else {
+                res.status(500).json({ error: 'Server error' });
+            }
         }
     });
 
     // Update password
-    router.post('/password', isAuthenticated, async (req, res) => {
-        const { currentPassword, newPassword } = req.body;
-        
+    router.put('/password', isAuthenticated, isActive, async (req, res) => {
+        const { currentPassword, newPassword, confirmPassword } = req.body;
+
+        // Validate password length
+        if (newPassword.length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters' });
+        }
+
+        // Validate password confirmation
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ error: 'Passwords do not match' });
+        }
+
         try {
+            // Get current user's password
+            const user = await new Promise((resolve, reject) => {
+                db.get(
+                    'SELECT password FROM users WHERE id = ?',
+                    [req.user.id],
+                    (err, row) => {
+                        if (err) reject(err);
+                        if (!row) reject(new Error('User not found'));
+                        resolve(row);
+                    }
+                );
+            });
+
             // Verify current password
-            const isMatch = await bcrypt.compare(currentPassword, req.user.password);
-            if (!isMatch) {
+            const isValid = await bcrypt.compare(currentPassword, user.password);
+            if (!isValid) {
                 return res.status(400).json({ error: 'Current password is incorrect' });
             }
 
@@ -63,20 +132,19 @@ module.exports = function(db) {
             const hashedPassword = await bcrypt.hash(newPassword, 10);
 
             // Update password
-            await new Promise((resolve, reject) => {
-                db.run(
-                    'UPDATE users SET password = ? WHERE id = ?',
-                    [hashedPassword, req.user.id],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
-            });
+            await dbHelper.runWithRetry(
+                'UPDATE users SET password = ? WHERE id = ?',
+                [hashedPassword, req.user.id]
+            );
 
             res.json({ message: 'Password updated successfully' });
         } catch (error) {
-            res.status(500).json({ error: 'Server error' });
+            console.error('Error updating password:', error);
+            if (error.message === 'User not found') {
+                res.status(404).json({ error: 'User not found' });
+            } else {
+                res.status(500).json({ error: 'Server error' });
+            }
         }
     });
 
