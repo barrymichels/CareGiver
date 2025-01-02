@@ -22,15 +22,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                 });
 
+                const data = await response.json();
+                
                 if (!response.ok) {
-                    throw new Error('Failed to update user');
+                    throw new Error(data.error || 'Failed to update user');
                 }
 
                 showToast(`User ${isActive ? 'activation' : 'admin status'} updated successfully`);
             } catch (error) {
                 console.error('Error updating user:', error);
                 toggle.checked = !newValue; // Revert the toggle
-                showToast('Failed to update user', 'error');
+                showToast(error.message || 'Failed to update user', 'error');
             }
         });
     }

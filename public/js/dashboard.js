@@ -26,43 +26,61 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     let isDirty = false;
-    const saveButton = document.getElementById('saveSchedule');
+    const saveButton = document.getElementById('saveAvailability');
     const unsavedChangesModal = document.getElementById('unsavedChangesModal');
 
-    // Disable save button initially
-    saveButton.disabled = true;
+    if (saveButton) {
+        // Disable save button initially
+        saveButton.disabled = true;
 
-    // Track changes to any checkbox
-    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-        checkbox.addEventListener('change', () => {
-            isDirty = true;
-            saveButton.disabled = false;
+        // Track changes to any checkbox
+        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                isDirty = true;
+                saveButton.disabled = false;
+                
+                // Update status text
+                const statusSpan = checkbox.parentElement.querySelector('.slot-status');
+                if (statusSpan) {
+                    statusSpan.textContent = checkbox.checked ? 'Available' : 'Unavailable';
+                    statusSpan.dataset.available = checkbox.checked;
+                }
+            });
         });
-    });
 
-    // Handle save button click
-    saveButton.addEventListener('click', async () => {
-        try {
-            // ... existing save logic ...
+        // Handle save button click
+        saveButton.addEventListener('click', async () => {
+            const availability = [];
+            document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                availability.push({
+                    date: checkbox.dataset.date,
+                    time: checkbox.dataset.time,
+                    isAvailable: checkbox.checked
+                });
+            });
 
-            // On successful save
-            isDirty = false;
-            saveButton.disabled = true;
-            
-            // Show success message
-            const toast = document.createElement('div');
-            toast.className = 'toast success';
-            toast.textContent = 'Schedule saved successfully';
-            document.body.appendChild(toast);
-            
-            // Remove toast after 3 seconds
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-        } catch (error) {
-            console.error('Error saving schedule:', error);
-        }
-    });
+            try {
+                const response = await fetch('/availability/update', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ availability }),
+                });
+
+                if (response.ok) {
+                    isDirty = false;
+                    saveButton.disabled = true;
+                    showToast('Availability saved successfully');
+                } else {
+                    showToast('Failed to save availability', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving availability:', error);
+                showToast('An error occurred while saving', 'error');
+            }
+        });
+    }
 
     // Handle page navigation
     window.addEventListener('beforeunload', (e) => {
@@ -91,31 +109,42 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+});
 
-    // Add toast styles
-    const style = document.createElement('style');
-    style.textContent = `
-        .toast {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            padding: 1rem 2rem;
-            border-radius: 4px;
-            background-color: var(--success-color);
-            color: white;
-            animation: slideIn 0.3s ease-out, fadeOut 0.3s ease-out 2.7s;
-            z-index: 1000;
-        }
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
 
-        @keyframes slideIn {
-            from { transform: translateY(100%); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
+// Add toast styles
+const style = document.createElement('style');
+style.textContent = `
+    .toast {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        padding: 1rem 2rem;
+        border-radius: 4px;
+        background-color: var(--success-color);
+        color: white;
+        animation: slideIn 0.3s ease-out, fadeOut 0.3s ease-out 2.7s;
+        z-index: 1000;
+    }
 
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; }
-        }
-    `;
-    document.head.appendChild(style);
-}); 
+    @keyframes slideIn {
+        from { transform: translateY(100%); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    @keyframes fadeOut {
+        from { opacity: 1; }
+        to { opacity: 0; }
+    }
+`;
+document.head.appendChild(style); 

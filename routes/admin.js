@@ -151,5 +151,47 @@ module.exports = function(db) {
         }
     });
 
+    // Update user status (active/admin)
+    router.put('/users/:id', isAuthenticated, isAdmin, async (req, res) => {
+        const { id } = req.params;
+        const { is_active, is_admin } = req.body;
+        
+        try {
+            // Validate that we're only updating one field at a time
+            if (typeof is_active !== 'boolean' && typeof is_admin !== 'boolean') {
+                return res.status(400).json({ error: 'Invalid update parameters' });
+            }
+
+            // Don't allow deactivating yourself
+            if (typeof is_active === 'boolean' && !is_active && parseInt(id) === req.user.id) {
+                return res.status(400).json({ error: 'Cannot deactivate your own account' });
+            }
+
+            // Don't allow removing your own admin status
+            if (typeof is_admin === 'boolean' && !is_admin && parseInt(id) === req.user.id) {
+                return res.status(400).json({ error: 'Cannot remove your own admin status' });
+            }
+
+            const field = typeof is_active === 'boolean' ? 'is_active' : 'is_admin';
+            const value = typeof is_active === 'boolean' ? is_active : is_admin;
+
+            await new Promise((resolve, reject) => {
+                db.run(
+                    `UPDATE users SET ${field} = ? WHERE id = ?`,
+                    [value, id],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            res.json({ message: 'User updated successfully' });
+        } catch (error) {
+            console.error('Error updating user:', error);
+            res.status(500).json({ error: 'Server error' });
+        }
+    });
+
     return router;
 }; 
