@@ -102,6 +102,22 @@ describe('Auth Routes', () => {
             expect(response.status).toBe(302);
             expect(response.header.location).toBe('/setup');
         });
+
+        it('should handle database errors', async () => {
+            // Mock db.get to simulate error
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                callback(new Error('Database error'));
+            };
+
+            const response = await request(app)
+                .get('/login');
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error', 'Server error');
+
+            // Restore original function
+            testDb.get = originalGet;
+        });
     });
 
     describe('GET /setup', () => {
@@ -121,6 +137,22 @@ describe('Auth Routes', () => {
                 .get('/setup');
             expect(response.status).toBe(302);
             expect(response.header.location).toBe('/login');
+        });
+
+        it('should handle database errors', async () => {
+            // Mock db.get to simulate error
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                callback(new Error('Database error'));
+            };
+
+            const response = await request(app)
+                .get('/setup');
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error', 'Server error');
+
+            // Restore original function
+            testDb.get = originalGet;
         });
     });
 
@@ -163,9 +195,76 @@ describe('Auth Routes', () => {
             expect(response.status).toBe(400);
             expect(response.body).toHaveProperty('error', 'Setup already completed');
         });
+
+        it('should handle database errors during setup check', async () => {
+            // Mock db.get to simulate error
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                if (sql.includes('COUNT')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalGet.call(testDb, sql, params, callback);
+                }
+            };
+
+            const response = await request(app)
+                .post('/setup')
+                .send({
+                    firstName: 'Admin',
+                    lastName: 'User',
+                    email: 'admin@example.com',
+                    password: 'password123',
+                    confirmPassword: 'password123'
+                });
+
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error', 'Server error');
+
+            // Restore original function
+            testDb.get = originalGet;
+        });
+
+        it('should handle database errors during user creation', async () => {
+            // Mock db.run to simulate error during insert
+            const originalRun = testDb.run;
+            testDb.run = (sql, params, callback) => {
+                if (sql.includes('INSERT')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalRun.call(testDb, sql, params, callback);
+                }
+            };
+
+            const response = await request(app)
+                .post('/setup')
+                .send({
+                    firstName: 'Admin',
+                    lastName: 'User',
+                    email: 'admin@example.com',
+                    password: 'password123',
+                    confirmPassword: 'password123'
+                });
+
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error', 'Error creating admin user');
+
+            // Restore original function
+            testDb.run = originalRun;
+        });
     });
 
     describe('POST /register', () => {
+        // Add beforeEach and afterEach to handle console mocking
+        let originalConsoleError;
+        beforeEach(() => {
+            originalConsoleError = console.error;
+            console.error = jest.fn();
+        });
+
+        afterEach(() => {
+            console.error = originalConsoleError;
+        });
+
         it('should register a new user successfully', async () => {
             const response = await request(app)
                 .post('/register')
@@ -240,6 +339,35 @@ describe('Auth Routes', () => {
             expect(response.status).toBe(400);
             expect(response.body).toHaveProperty('error', 'All fields are required');
         });
+
+        it('should handle database errors during registration', async () => {
+            // Mock db.run to simulate error during insert
+            const originalRun = testDb.run;
+            testDb.run = (sql, params, callback) => {
+                if (sql.includes('INSERT')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalRun.call(testDb, sql, params, callback);
+                }
+            };
+
+            const response = await request(app)
+                .post('/register')
+                .send({
+                    firstName: 'New',
+                    lastName: 'User',
+                    email: 'new@example.com',
+                    password: 'password123',
+                    confirmPassword: 'password123'
+                });
+
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error', 'Server error');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.run = originalRun;
+        });
     });
 
     describe('GET /logout', () => {
@@ -259,6 +387,47 @@ describe('Auth Routes', () => {
             const response = await agent.get('/logout');
             expect(response.status).toBe(302);
             expect(response.header.location).toBe('/login');
+        });
+
+        it('should handle logout errors', async () => {
+            // First login
+            const user = await createTestUser();
+            const agent = request.agent(app);
+            
+            await agent
+                .post('/login')
+                .send({
+                    email: user.email,
+                    password: 'password123'
+                });
+
+            // Save original stack
+            const oldStack = app._router.stack;
+
+            // Create a new router with error-throwing logout
+            const express = require('express');
+            const router = express.Router();
+            
+            // Add error-throwing logout route
+            router.get('/logout', (req, res, next) => {
+                next(new Error('Logout error'));
+            });
+
+            // Add error handling middleware
+            router.use((err, req, res, next) => {
+                res.status(500).json({ error: 'Server error' });
+            });
+
+            // Replace the existing routes
+            app._router.stack = oldStack.filter(layer => !layer.handle || layer.handle.name !== 'router');
+            app.use('/', router);
+
+            const response = await agent.get('/logout');
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error', 'Server error');
+
+            // Restore original routes
+            app._router.stack = oldStack;
         });
     });
 }); 

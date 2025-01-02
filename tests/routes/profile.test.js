@@ -36,13 +36,21 @@ const profileRoutes = require('../../routes/profile')(testDb);
 describe('Profile Routes', () => {
     let testUser;
     let mockAuth;
+    let originalConsoleError;
+    let isErrorExpected = false;
 
     beforeAll(async () => {
         await initializeTestDb();
+        // Save original console.error
+        originalConsoleError = console.error;
     });
 
     beforeEach(async () => {
         await clearTestDb();
+        isErrorExpected = false;
+        // Mock console.error for each test
+        console.error = jest.fn();
+        
         testUser = await createTestUser();
         mockAuth = (req, res, next) => {
             req.isAuthenticated = () => true;
@@ -59,6 +67,20 @@ describe('Profile Routes', () => {
         app.use('/profile', mockAuth, profileRoutes);
     });
 
+    afterEach(() => {
+        // Only verify no unexpected errors if we're not expecting errors
+        if (!isErrorExpected) {
+            expect(console.error).not.toHaveBeenCalled();
+        }
+        // Reset console.error to original after each test
+        console.error = originalConsoleError;
+    });
+
+    afterAll(() => {
+        // Restore original console.error
+        console.error = originalConsoleError;
+    });
+
     describe('GET /profile', () => {
         it('should render profile page with user data', async () => {
             const response = await request(app)
@@ -70,6 +92,69 @@ describe('Profile Routes', () => {
             expect(response.text).toContain(testUser.first_name);
             expect(response.text).toContain(testUser.last_name);
             expect(response.text).toContain(testUser.email);
+        });
+
+        it('should handle database errors', async () => {
+            isErrorExpected = true;
+            
+            // Mock db.get to simulate error
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                callback(new Error('Database error'));
+            };
+
+            const response = await request(app)
+                .get('/profile')
+                .set('Accept', 'application/json')
+                .expect(500);
+
+            expect(response.body).toHaveProperty('error', 'Server error');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.get = originalGet;
+        });
+
+        it('should handle user not found', async () => {
+            isErrorExpected = true;
+            
+            // Mock db.get to simulate user not found
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                callback(null, null);
+            };
+
+            const response = await request(app)
+                .get('/profile')
+                .set('Accept', 'application/json')
+                .expect(500);
+
+            expect(response.body).toHaveProperty('error', 'Server error');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.get = originalGet;
+        });
+
+        it('should return HTML error for HTML requests', async () => {
+            isErrorExpected = true;
+            
+            // Mock db.get to simulate error
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                callback(new Error('Database error'));
+            };
+
+            const response = await request(app)
+                .get('/profile')
+                .set('Accept', 'text/html')
+                .expect(500);
+
+            expect(response.text).toContain('<div class="error">Server error</div>');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.get = originalGet;
         });
     });
 
@@ -197,6 +282,87 @@ describe('Profile Routes', () => {
 
             expect(response.status).toBe(400);
             expect(response.body).toHaveProperty('error', 'Password must be at least 8 characters');
+        });
+
+        it('should handle database error when getting user', async () => {
+            isErrorExpected = true;
+            
+            // Mock db.get to simulate database error
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                callback(new Error('Database error'));
+            };
+
+            const response = await request(app)
+                .put('/profile/password')
+                .send({
+                    currentPassword: 'password123',
+                    newPassword: 'newpassword123',
+                    confirmPassword: 'newpassword123'
+                })
+                .expect(500);
+
+            expect(response.body).toHaveProperty('error', 'Server error');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.get = originalGet;
+        });
+
+        it('should handle user not found error', async () => {
+            isErrorExpected = true;
+            
+            // Mock db.get to simulate user not found
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                callback(null, null);
+            };
+
+            const response = await request(app)
+                .put('/profile/password')
+                .send({
+                    currentPassword: 'password123',
+                    newPassword: 'newpassword123',
+                    confirmPassword: 'newpassword123'
+                })
+                .expect(404);
+
+            expect(response.body).toHaveProperty('error', 'User not found');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.get = originalGet;
+        });
+
+        it('should handle database error during password update', async () => {
+            isErrorExpected = true;
+            
+            const passwords = {
+                currentPassword: 'password123',
+                newPassword: 'newpassword123',
+                confirmPassword: 'newpassword123'
+            };
+
+            // Mock runWithRetry to simulate database error
+            const originalRun = testDb.run;
+            testDb.run = (sql, params, callback) => {
+                if (sql.includes('UPDATE')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalRun.call(testDb, sql, params, callback);
+                }
+            };
+
+            const response = await request(app)
+                .put('/profile/password')
+                .send(passwords)
+                .expect(500);
+
+            expect(response.body).toHaveProperty('error', 'Server error');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.run = originalRun;
         });
     });
 }); 

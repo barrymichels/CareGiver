@@ -48,6 +48,7 @@ class DatabaseHelper {
             await this.runWithRetry('ROLLBACK');
         } catch (error) {
             console.error('Error during rollback:', error);
+            throw error;
         }
     }
 

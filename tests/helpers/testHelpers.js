@@ -38,7 +38,7 @@ async function getUserByEmail(email) {
     return new Promise((resolve, reject) => {
         testDb.get('SELECT * FROM users WHERE email = ?', [email], (err, row) => {
             if (err) reject(err);
-            resolve(row);
+            resolve(row || null);
         });
     });
 }
@@ -46,13 +46,35 @@ async function getUserByEmail(email) {
 async function clearTestDb() {
     const tables = ['users', 'availability', 'assignments', 'user_preferences'];
     
-    for (const table of tables) {
+    // Use a single transaction for faster cleanup
+    await new Promise((resolve, reject) => {
+        testDb.run('BEGIN TRANSACTION', (err) => {
+            if (err) reject(err);
+            resolve();
+        });
+    });
+
+    try {
+        for (const table of tables) {
+            await new Promise((resolve, reject) => {
+                testDb.run(`DELETE FROM ${table}`, (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+        }
+
         await new Promise((resolve, reject) => {
-            testDb.run(`DELETE FROM ${table}`, (err) => {
+            testDb.run('COMMIT', (err) => {
                 if (err) reject(err);
                 resolve();
             });
         });
+    } catch (error) {
+        await new Promise((resolve) => {
+            testDb.run('ROLLBACK', () => resolve());
+        });
+        throw error;
     }
 }
 
@@ -124,7 +146,7 @@ async function getPreferences(userId) {
                     reject(err);
                     return;
                 }
-                resolve(row);
+                resolve(row || null);
             }
         );
     });
@@ -137,8 +159,17 @@ async function getUserById(userId) {
             'SELECT id, first_name, last_name, email, password, is_active, is_admin FROM users WHERE id = ?',
             [userId],
             (err, row) => {
-                if (err) reject(err);
-                if (!row) reject(new Error('User not found'));
+                if (err) {
+                    console.error('Error getting user:', err);
+                    reject(err);
+                    return;
+                }
+                if (!row) {
+                    const error = new Error('User not found');
+                    console.error('Error getting user:', error);
+                    reject(error);
+                    return;
+                }
                 resolve(row);
             }
         );
