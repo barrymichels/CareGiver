@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { isAdmin } = require('../middleware/auth');
+const { isAuthenticated, isAdmin } = require('../middleware/auth');
+const DatabaseHelper = require('../utils/dbHelper');
 
 module.exports = function(db) {
+    const dbHelper = new DatabaseHelper(db);
+
     // Admin dashboard
-    router.get('/', isAdmin, async (req, res) => {
+    router.get('/', isAuthenticated, isAdmin, async (req, res) => {
         try {
             const nextWeekStart = new Date();
             nextWeekStart.setDate(nextWeekStart.getDate() + 7 - nextWeekStart.getDay() + 1);
@@ -69,7 +72,31 @@ module.exports = function(db) {
                 nextWeekStart
             });
         } catch (error) {
-            res.status(500).json({ error: 'Server error' });
+            console.error('Error loading admin dashboard:', error);
+            res.status(500).render('error', { message: 'Server error', user: req.user });
+        }
+    });
+
+    // User management page
+    router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
+        try {
+            const users = await new Promise((resolve, reject) => {
+                db.all(
+                    'SELECT id, first_name, last_name, email, is_admin, is_active FROM users ORDER BY last_name, first_name',
+                    (err, rows) => {
+                        if (err) reject(err);
+                        resolve(rows);
+                    }
+                );
+            });
+
+            res.render('admin/users', { 
+                user: req.user,
+                users: users
+            });
+        } catch (error) {
+            console.error('Error loading user management:', error);
+            res.status(500).render('error', { message: 'Server error', user: req.user });
         }
     });
 

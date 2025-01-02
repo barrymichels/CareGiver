@@ -12,12 +12,16 @@ function isActive(req, res, next) {
     res.status(403).json({ error: 'Account not activated' });
 }
 
-function isAdmin(req, res, next) {
+const isAdmin = (req, res, next) => {
     if (req.user && req.user.is_admin) {
-        return next();
+        next();
+    } else {
+        res.status(403).render('error', { 
+            message: 'Access denied', 
+            user: req.user 
+        });
     }
-    res.status(403).json({ error: 'Admin access required' });
-}
+};
 
 module.exports = {
     isAuthenticated,

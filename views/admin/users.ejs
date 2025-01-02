@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management - Wayne's Schedule</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/header.css">
+    <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+    <%- include('../partials/header', { user }) %>
+    
+    <main class="admin-content">
+        <div class="users-container">
+            <h1>User Management</h1>
+            
+            <div class="user-list">
+                <% users.forEach(function(u) { %>
+                    <div class="user-card">
+                        <div class="user-info">
+                            <h3><%= u.first_name %> <%= u.last_name %></h3>
+                            <p><%= u.email %></p>
+                        </div>
+                        <div class="user-controls">
+                            <label class="toggle-switch">
+                                <input type="checkbox" 
+                                       class="active-toggle"
+                                       data-user-id="<%= u.id %>"
+                                       <%= u.is_active ? 'checked' : '' %>>
+                                <span class="slider"></span>
+                                <span class="label">Active</span>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox"
+                                       class="admin-toggle"
+                                       data-user-id="<%= u.id %>"
+                                       <%= u.is_admin ? 'checked' : '' %>>
+                                <span class="slider"></span>
+                                <span class="label">Admin</span>
+                            </label>
+                        </div>
+                    </div>
+                <% }); %>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/header.js"></script>
+    <script src="/js/admin.js"></script>
+</body>
+</html> 
