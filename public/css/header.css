@@ -66,6 +66,7 @@
     min-width: 150px;
     display: none;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1001;
 }
 
 .dropdown-menu.active {
@@ -81,6 +82,11 @@
 }
 
 .menu-item:hover {
+    background-color: var(--input-bg);
+}
+
+.menu-item:focus {
+    outline: none;
     background-color: var(--input-bg);
 }
 

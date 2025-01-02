@@ -1,27 +1,50 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const profileButton = document.getElementById('profileButton');
-    const profileMenu = document.getElementById('profileMenu');
+    const profileButton = document.querySelector('.profile-button');
+    const dropdownMenu = document.querySelector('.dropdown-menu');
 
-    if (profileButton && profileMenu) {
-        // Toggle profile menu for both click and touch
-        function toggleMenu(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            profileMenu.classList.toggle('active');
+    // Toggle dropdown when clicking profile button
+    profileButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdownMenu.classList.toggle('active');
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!profileButton.contains(e.target)) {
+            dropdownMenu.classList.remove('active');
         }
+    });
 
-        // Add both click and touch handlers
-        profileButton.addEventListener('click', toggleMenu);
-        profileButton.addEventListener('touchend', toggleMenu);
-
-        // Close menu when clicking/touching outside
-        function closeMenu(e) {
-            if (!profileMenu.contains(e.target) && !profileButton.contains(e.target)) {
-                profileMenu.classList.remove('active');
-            }
+    // Close dropdown when pressing escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            dropdownMenu.classList.remove('active');
         }
+    });
 
-        document.addEventListener('click', closeMenu);
-        document.addEventListener('touchend', closeMenu);
-    }
+    // Handle dropdown menu keyboard navigation
+    dropdownMenu.addEventListener('keydown', (e) => {
+        const menuItems = dropdownMenu.querySelectorAll('.menu-item');
+        const currentIndex = Array.from(menuItems).indexOf(document.activeElement);
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                if (currentIndex < menuItems.length - 1) {
+                    menuItems[currentIndex + 1].focus();
+                }
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                if (currentIndex > 0) {
+                    menuItems[currentIndex - 1].focus();
+                }
+                break;
+            case 'Tab':
+                if (!e.shiftKey && currentIndex === menuItems.length - 1) {
+                    dropdownMenu.classList.remove('active');
+                }
+                break;
+        }
+    });
 }); 
