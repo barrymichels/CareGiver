@@ -270,4 +270,263 @@ describe('DatabaseHelper', () => {
             }
         });
     });
+
+    describe('getWithRetry', () => {
+        it('should fetch single row successfully', async () => {
+            // Insert test data
+            await dbHelper.runWithRetry(
+                'INSERT INTO transaction_test (value) VALUES (?)',
+                ['test_get']
+            );
+
+            const result = await dbHelper.getWithRetry(
+                'SELECT * FROM transaction_test WHERE value = ?',
+                ['test_get']
+            );
+            
+            expect(result).toBeDefined();
+            expect(result.value).toBe('test_get');
+        });
+
+        it('should return undefined for non-existent row', async () => {
+            const result = await dbHelper.getWithRetry(
+                'SELECT * FROM transaction_test WHERE value = ?',
+                ['nonexistent']
+            );
+            
+            expect(result).toBeUndefined();
+        });
+
+        it('should retry on SQLITE_BUSY with exponential backoff', async () => {
+            const originalGet = testDb.get;
+            const mockGet = jest.fn();
+            let attempts = 0;
+            
+            testDb.get = (sql, params, callback) => {
+                mockGet(sql, params);
+                if (attempts < 2) {
+                    attempts++;
+                    const error = new Error('SQLITE_BUSY');
+                    error.code = 'SQLITE_BUSY';
+                    callback(error);
+                } else {
+                    callback(null, { value: 'success' });
+                }
+            };
+
+            const startTime = Date.now();
+            const result = await dbHelper.getWithRetry(
+                'SELECT * FROM transaction_test',
+                [],
+                3,
+                200
+            );
+
+            const duration = Date.now() - startTime;
+            expect(duration).toBeGreaterThan(300);
+            expect(mockGet).toHaveBeenCalledTimes(3);
+            expect(result).toEqual({ value: 'success' });
+
+            testDb.get = originalGet;
+        });
+
+        it('should handle non-SQLITE_BUSY errors immediately', async () => {
+            const originalGet = testDb.get;
+            testDb.get = (sql, params, callback) => {
+                callback(new Error('Other error'));
+            };
+
+            await expect(
+                dbHelper.getWithRetry('SELECT * FROM transaction_test')
+            ).rejects.toThrow('Other error');
+
+            testDb.get = originalGet;
+        });
+    });
+
+    describe('allWithRetry', () => {
+        it('should fetch multiple rows successfully', async () => {
+            // Insert test data
+            await dbHelper.runWithRetry(
+                'INSERT INTO transaction_test (value) VALUES (?), (?)',
+                ['test1', 'test2']
+            );
+
+            const results = await dbHelper.allWithRetry(
+                'SELECT * FROM transaction_test ORDER BY value'
+            );
+            
+            expect(results).toHaveLength(2);
+            expect(results[0].value).toBe('test1');
+            expect(results[1].value).toBe('test2');
+        });
+
+        it('should return empty array for no results', async () => {
+            const results = await dbHelper.allWithRetry(
+                'SELECT * FROM transaction_test WHERE value = ?',
+                ['nonexistent']
+            );
+            
+            expect(results).toEqual([]);
+        });
+
+        it('should retry on SQLITE_LOCKED with exponential backoff', async () => {
+            const originalAll = testDb.all;
+            const mockAll = jest.fn();
+            let attempts = 0;
+            
+            testDb.all = (sql, params, callback) => {
+                mockAll(sql, params);
+                if (attempts < 2) {
+                    attempts++;
+                    const error = new Error('Database locked');
+                    error.code = 'SQLITE_LOCKED';
+                    callback(error);
+                } else {
+                    callback(null, [{ value: 'success' }]);
+                }
+            };
+
+            const startTime = Date.now();
+            const results = await dbHelper.allWithRetry(
+                'SELECT * FROM transaction_test',
+                [],
+                3,
+                200
+            );
+
+            const duration = Date.now() - startTime;
+            expect(duration).toBeGreaterThan(300);
+            expect(mockAll).toHaveBeenCalledTimes(3);
+            expect(results).toEqual([{ value: 'success' }]);
+
+            testDb.all = originalAll;
+        });
+
+        it('should handle concurrent transactions', async () => {
+            // Create fresh table for this test
+            await new Promise((resolve, reject) => {
+                testDb.run('DROP TABLE IF EXISTS transaction_test', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+            
+            await new Promise((resolve, reject) => {
+                testDb.run(`
+                    CREATE TABLE transaction_test (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        value TEXT NOT NULL
+                    )
+                `, (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Start a transaction that will hold a lock
+            await dbHelper.beginTransaction();
+            await dbHelper.runWithRetry(
+                'INSERT INTO transaction_test (value) VALUES (?)',
+                ['locked']
+            );
+
+            // Try to read while transaction is in progress
+            const promise = dbHelper.allWithRetry(
+                'SELECT * FROM transaction_test WHERE value = ?',
+                ['locked'],
+                2,
+                100
+            );
+
+            // Complete transaction after a delay
+            await new Promise(resolve => setTimeout(resolve, 50)); // Small delay to ensure transaction is active
+            
+            await dbHelper.commit();
+            const results = await promise;
+            
+            expect(results).toHaveLength(1);
+            expect(results[0].value).toBe('locked');
+        });
+    });
+
+    describe('Edge Cases', () => {
+        it('should handle maximum retry attempts correctly', async () => {
+            const originalRun = testDb.run;
+            const mockRun = jest.fn();
+            
+            testDb.run = (sql, params, callback) => {
+                mockRun();
+                const error = new Error('SQLITE_BUSY');
+                error.code = 'SQLITE_BUSY';
+                callback(error);
+            };
+
+            const maxRetries = 3;
+            await expect(
+                dbHelper.runWithRetry(
+                    'INSERT INTO transaction_test (value) VALUES (?)',
+                    ['test'],
+                    maxRetries,
+                    50
+                )
+            ).rejects.toThrow('SQLITE_BUSY');
+
+            expect(mockRun).toHaveBeenCalledTimes(maxRetries);
+
+            testDb.run = originalRun;
+        });
+
+        it('should handle null parameters correctly', async () => {
+            // First modify the table to allow NULL values
+            await new Promise((resolve, reject) => {
+                testDb.run('DROP TABLE IF EXISTS transaction_test', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+            
+            await new Promise((resolve, reject) => {
+                testDb.run(`
+                    CREATE TABLE transaction_test (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        value TEXT
+                    )
+                `, (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Verify table exists and has correct schema
+            const tableInfo = await new Promise((resolve, reject) => {
+                testDb.get("SELECT sql FROM sqlite_master WHERE type='table' AND name='transaction_test'", (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+            expect(tableInfo).toBeDefined();
+
+            await dbHelper.runWithRetry(
+                'INSERT INTO transaction_test (value) VALUES (?)',
+                [null]
+            );
+
+            const result = await dbHelper.getWithRetry(
+                'SELECT * FROM transaction_test WHERE value IS NULL'
+            );
+            
+            expect(result).toBeDefined();
+            expect(result.value).toBeNull();
+        });
+
+        it('should handle empty parameter arrays', async () => {
+            const result = await dbHelper.getWithRetry(
+                'SELECT COUNT(*) as count FROM transaction_test'
+            );
+            
+            expect(result).toBeDefined();
+            expect(typeof result.count).toBe('number');
+        });
+    });
 }); 
