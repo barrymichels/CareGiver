@@ -4,6 +4,7 @@ const session = require('express-session');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
+const sqlite3 = require('sqlite3').verbose();
 const { testDb, initializeTestDb } = require('../../config/test.db');
 const { createTestUser, clearTestDb } = require('../helpers/testHelpers');
 const { isAuthenticated, isActive } = require('../../middleware/auth');
@@ -173,12 +174,11 @@ describe('Index Routes', () => {
 
     afterAll(async () => {
         // Close database connection
-        await new Promise((resolve, reject) => {
-            db.close((err) => {
-                if (err) reject(err);
-                resolve();
+        if (db) {
+            await new Promise((resolve) => {
+                db.close(() => resolve());
             });
-        });
+        }
     });
 
     describe('GET /', () => {
@@ -286,6 +286,281 @@ describe('Index Routes', () => {
             expect(renderData).toHaveProperty('weekStart');
             expect(renderData).toHaveProperty('assignments');
             expect(renderData).toHaveProperty('userAvailability');
+        });
+
+        it('should handle database error during setup check', async () => {
+            // Create a new database connection that we can close
+            const errorDb = new sqlite3.Database(':memory:');
+            
+            // Mock the database query to simulate an error
+            errorDb.get = jest.fn((query, callback) => {
+                if (query.includes('COUNT(*) as count FROM users')) {
+                    callback(new Error('Database error'));
+                } else {
+                    db.get(query, callback); // Use main db for other queries
+                }
+            });
+
+            // Create a new Express app for error testing
+            const errorApp = express();
+            errorApp.use(express.json());
+            errorApp.use(express.urlencoded({ extended: true }));
+
+            // Add error routes with error handling middleware
+            const errorRoutes = require('../../routes/index')(errorDb);
+            errorApp.use('/', errorRoutes);
+            errorApp.use((err, req, res, next) => {
+                res.status(500).json({ error: err.message });
+            });
+
+            const response = await request(errorApp).get('/');
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error');
+
+            // Clean up
+            await new Promise(resolve => errorDb.close(resolve));
+        });
+
+        it('should handle database error during assignments query', async () => {
+            // Create a new database connection for error testing
+            const errorDb = new sqlite3.Database(':memory:');
+            
+            // Mock the assignments query to simulate an error
+            errorDb.all = jest.fn((query, params, callback) => {
+                if (query.includes('assignments')) {
+                    callback(new Error('Database error'));
+                } else {
+                    db.all(query, params, callback); // Use main db for other queries
+                }
+            });
+
+            // Copy auth functions from main db
+            errorDb.get = db.get.bind(db);
+
+            // Create a new Express app for error testing
+            const errorApp = express();
+            errorApp.use(express.json());
+            errorApp.use(express.urlencoded({ extended: true }));
+
+            // Copy session and auth configuration
+            errorApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false,
+                cookie: { secure: false }
+            }));
+
+            // Create a new passport instance for error app
+            const errorPassport = new passport.Passport();
+            errorApp.use(errorPassport.initialize());
+            errorApp.use(errorPassport.session());
+
+            // Configure passport for error app
+            errorPassport.use(new LocalStrategy(
+                { usernameField: 'email' },
+                async (email, password, done) => {
+                    try {
+                        const user = await new Promise((resolve, reject) => {
+                            db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
+                                if (err) reject(err);
+                                resolve(row);
+                            });
+                        });
+
+                        if (!user) {
+                            return done(null, false, { message: 'Invalid email or password' });
+                        }
+
+                        const isMatch = await bcrypt.compare(password, user.password);
+                        if (!isMatch) {
+                            return done(null, false, { message: 'Invalid email or password' });
+                        }
+
+                        return done(null, user);
+                    } catch (err) {
+                        return done(err);
+                    }
+                }
+            ));
+
+            errorPassport.serializeUser((user, done) => {
+                done(null, user.id);
+            });
+
+            errorPassport.deserializeUser((id, done) => {
+                db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
+                    if (err) return done(err);
+                    if (!user) return done(null, false);
+                    done(null, user);
+                });
+            });
+
+            // Add login route to error app
+            errorApp.post('/login', (req, res, next) => {
+                errorPassport.authenticate('local', (err, user, info) => {
+                    if (err) return next(err);
+                    if (!user) return res.status(401).json(info);
+                    
+                    req.logIn(user, (err) => {
+                        if (err) return next(err);
+                        res.status(200).json({ success: true });
+                    });
+                })(req, res, next);
+            });
+
+            // Add error routes with error handling middleware
+            const errorRoutes = require('../../routes/index')(errorDb);
+            errorApp.use('/', errorRoutes);
+            errorApp.use((err, req, res, next) => {
+                res.status(500).json({ error: err.message });
+            });
+
+            // Create a new agent and login
+            const errorAgent = request.agent(errorApp);
+            const loginResponse = await errorAgent
+                .post('/login')
+                .send({ email: testUser.email, password: 'password123' });
+            expect(loginResponse.status).toBe(200);
+
+            // Set user as active
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'UPDATE users SET is_active = 1 WHERE id = ?',
+                    [testUser.id],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            const response = await errorAgent.get('/');
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error');
+
+            // Clean up
+            await new Promise(resolve => errorDb.close(resolve));
+        });
+
+        it('should handle database error during availability query', async () => {
+            // Create a new database connection for error testing
+            const errorDb = new sqlite3.Database(':memory:');
+            
+            // Mock the database queries to simulate an error in availability query
+            errorDb.all = jest.fn((query, params, callback) => {
+                if (query.includes('availability')) {
+                    callback(new Error('Database error'));
+                } else {
+                    db.all(query, params, callback); // Use main db for other queries
+                }
+            });
+
+            // Copy auth functions from main db
+            errorDb.get = db.get.bind(db);
+
+            // Create a new Express app for error testing
+            const errorApp = express();
+            errorApp.use(express.json());
+            errorApp.use(express.urlencoded({ extended: true }));
+
+            // Copy session and auth configuration
+            errorApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false,
+                cookie: { secure: false }
+            }));
+
+            // Create a new passport instance for error app
+            const errorPassport = new passport.Passport();
+            errorApp.use(errorPassport.initialize());
+            errorApp.use(errorPassport.session());
+
+            // Configure passport for error app
+            errorPassport.use(new LocalStrategy(
+                { usernameField: 'email' },
+                async (email, password, done) => {
+                    try {
+                        const user = await new Promise((resolve, reject) => {
+                            db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
+                                if (err) reject(err);
+                                resolve(row);
+                            });
+                        });
+
+                        if (!user) {
+                            return done(null, false, { message: 'Invalid email or password' });
+                        }
+
+                        const isMatch = await bcrypt.compare(password, user.password);
+                        if (!isMatch) {
+                            return done(null, false, { message: 'Invalid email or password' });
+                        }
+
+                        return done(null, user);
+                    } catch (err) {
+                        return done(err);
+                    }
+                }
+            ));
+
+            errorPassport.serializeUser((user, done) => {
+                done(null, user.id);
+            });
+
+            errorPassport.deserializeUser((id, done) => {
+                db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
+                    if (err) return done(err);
+                    if (!user) return done(null, false);
+                    done(null, user);
+                });
+            });
+
+            // Add login route to error app
+            errorApp.post('/login', (req, res, next) => {
+                errorPassport.authenticate('local', (err, user, info) => {
+                    if (err) return next(err);
+                    if (!user) return res.status(401).json(info);
+                    
+                    req.logIn(user, (err) => {
+                        if (err) return next(err);
+                        res.status(200).json({ success: true });
+                    });
+                })(req, res, next);
+            });
+
+            // Add error routes with error handling middleware
+            const errorRoutes = require('../../routes/index')(errorDb);
+            errorApp.use('/', errorRoutes);
+            errorApp.use((err, req, res, next) => {
+                res.status(500).json({ error: err.message });
+            });
+
+            // Create a new agent and login
+            const errorAgent = request.agent(errorApp);
+            const loginResponse = await errorAgent
+                .post('/login')
+                .send({ email: testUser.email, password: 'password123' });
+            expect(loginResponse.status).toBe(200);
+
+            // Set user as active
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'UPDATE users SET is_active = 1 WHERE id = ?',
+                    [testUser.id],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            const response = await errorAgent.get('/');
+            expect(response.status).toBe(500);
+            expect(response.body).toHaveProperty('error');
+
+            // Clean up
+            await new Promise(resolve => errorDb.close(resolve));
         });
     });
 }); 
