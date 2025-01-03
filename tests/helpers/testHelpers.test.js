@@ -74,9 +74,14 @@ describe('Test Helpers', () => {
         });
 
         it('should handle database errors', async () => {
+            isErrorExpected = true;
             // Mock db.run to simulate error
             const originalRun = testDb.run;
-            testDb.run = (sql, params, callback) => {
+            testDb.run = function(sql, params, callback) {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
                 callback(new Error('Database error'));
             };
 
@@ -101,9 +106,14 @@ describe('Test Helpers', () => {
         });
 
         it('should handle database errors', async () => {
+            isErrorExpected = true;
             // Mock db.get to simulate error
             const originalGet = testDb.get;
-            testDb.get = (sql, params, callback) => {
+            testDb.get = function(sql, params, callback) {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
                 callback(new Error('Database error'));
             };
 
@@ -144,7 +154,11 @@ describe('Test Helpers', () => {
             
             // Mock db.all to simulate error
             const originalAll = testDb.all;
-            testDb.all = (sql, params, callback) => {
+            testDb.all = function(sql, params, callback) {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
                 callback(new Error('Database error'));
             };
 
@@ -171,7 +185,7 @@ describe('Test Helpers', () => {
                 testDb.run(
                     'INSERT INTO user_preferences (user_id, preferences) VALUES (?, ?)',
                     [testUser.id, JSON.stringify([{ dayOfWeek: 1, time: '9:00am', isAvailable: true }])],
-                    (err) => {
+                    function(err) {
                         if (err) reject(err);
                         resolve();
                     }
@@ -188,7 +202,11 @@ describe('Test Helpers', () => {
             
             // Mock db.get to simulate error
             const originalGet = testDb.get;
-            testDb.get = (sql, params, callback) => {
+            testDb.get = function(sql, params, callback) {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
                 callback(new Error('Database error'));
             };
 

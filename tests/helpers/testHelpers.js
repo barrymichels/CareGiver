@@ -21,17 +21,41 @@ async function createTestUser(userData = {}) {
         user.password = await bcrypt.hash(userData.password, 10);
     }
 
-    return new Promise((resolve, reject) => {
-        testDb.run(
-            `INSERT INTO users (first_name, last_name, email, password, is_admin, is_active)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [user.first_name, user.last_name, user.email, user.password, user.is_admin, user.is_active],
-            function(err) {
-                if (err) reject(err);
-                resolve({ ...user, id: this.lastID });
-            }
-        );
+    // Use a transaction to ensure the write is committed
+    await new Promise((resolve, reject) => {
+        testDb.run('BEGIN TRANSACTION', err => {
+            if (err) reject(err);
+            resolve();
+        });
     });
+
+    try {
+        const result = await new Promise((resolve, reject) => {
+            testDb.run(
+                `INSERT INTO users (first_name, last_name, email, password, is_admin, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [user.first_name, user.last_name, user.email, user.password, user.is_admin, user.is_active],
+                function(err) {
+                    if (err) reject(err);
+                    resolve({ ...user, id: this.lastID });
+                }
+            );
+        });
+
+        await new Promise((resolve, reject) => {
+            testDb.run('COMMIT', err => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        return result;
+    } catch (error) {
+        await new Promise(resolve => {
+            testDb.run('ROLLBACK', () => resolve());
+        });
+        throw error;
+    }
 }
 
 async function getUserByEmail(email) {

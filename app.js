@@ -157,13 +157,19 @@ app.get('/inactive', isAuthenticated, (req, res) => {
 });
 
 // Keep only this route in app.js for the root path
-app.get('/', isAuthenticated, isActive, async (req, res) => {
+app.get('/', async (req, res, next) => {
     try {
         const needsSetup = await checkSetupRequired();
         if (needsSetup) {
             return res.redirect('/setup');
         }
-        
+        next();
+    } catch (error) {
+        console.error('Error in setup check:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}, isAuthenticated, isActive, async (req, res) => {
+    try {
         if (req.isAuthenticated()) {
             const today = new Date();
             const weekStart = new Date(today);
@@ -209,11 +215,28 @@ app.get('/', isAuthenticated, isActive, async (req, res) => {
             res.redirect('/login');
         }
     } catch (error) {
+        console.error('Error rendering dashboard:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-}); 
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'Server error' });
+});
+
+// Move server creation to a separate function
+function startServer() {
+    const PORT = process.env.PORT || 3000;
+    return app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
+
+// Only start the server if this file is run directly (not imported as a module)
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = { app, startServer }; 
