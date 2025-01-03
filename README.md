@@ -72,14 +72,57 @@ npm start
 
 The application can be deployed using Docker:
 
+1. Build and start the containers:
 ```bash
 docker-compose up -d
 ```
 
+2. Check container status:
+```bash
+docker-compose ps
+```
+
+3. View logs if needed:
+```bash
+docker-compose logs -f
+```
+
 This will:
-- Build the application container
+- Build the application container with proper permissions
 - Set up persistent volume for the database
 - Start the application on port 3000
+- Configure automatic health checks and restarts
+
+### Docker Environment Variables
+
+The following environment variables can be modified in `docker-compose.yml`:
+```
+NODE_ENV=production
+PORT=3000
+SESSION_SECRET=change_this_in_production
+DB_PATH=/usr/src/app/data/database.sqlite
+```
+
+### Troubleshooting Docker Deployment
+
+If you encounter any issues:
+
+1. Check container logs:
+```bash
+docker-compose logs -f
+```
+
+2. Ensure volume permissions:
+```bash
+docker-compose down
+docker volume rm caregiver_db-data
+docker-compose up -d
+```
+
+3. Verify container health:
+```bash
+docker-compose ps
+```
 
 ## Development
 
