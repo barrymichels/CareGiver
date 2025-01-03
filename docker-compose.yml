@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SESSION_SECRET=change_this_in_production
+      - DB_PATH=/usr/src/app/data/database.sqlite
+    volumes:
+      - db-data:/usr/src/app/data
+    restart: unless-stopped
+
+volumes:
+  db-data: 

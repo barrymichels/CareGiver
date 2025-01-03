@@ -57,7 +57,7 @@
                                     </div>
                                     <div class="time-slot-content">
                                         <% const assignment = assignments.find(a => 
-                                            a.day_date === day.date.toISOString().split('T')[0] && 
+                                            a.day_date === day.date.toLocaleDateString('en-CA') && 
                                             a.time_slot === slot.time
                                         ); %>
                                         <div class="assignment <%= assignment ? 'assigned' : 'open' %>">
