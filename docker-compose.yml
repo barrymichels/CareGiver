@@ -11,7 +11,7 @@ services:
       - SESSION_SECRET=change_this_in_production
       - DB_PATH=/usr/src/app/data/database.sqlite
     volumes:
-      - db-data:/usr/src/app/data
+      - ./data:/usr/src/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/"]

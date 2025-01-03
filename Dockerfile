@@ -1,7 +1,7 @@
 FROM node:18-slim
 
-# Install SQLite tools
-RUN apt-get update && apt-get install -y sqlite3 && rm -rf /var/lib/apt/lists/*
+# Install SQLite tools and curl for healthcheck
+RUN apt-get update && apt-get install -y sqlite3 curl && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
 WORKDIR /usr/src/app
@@ -14,11 +14,6 @@ RUN npm ci --only=production
 
 # Copy app source
 COPY . .
-
-# Create volume directory for database and set permissions
-RUN mkdir -p /usr/src/app/data && \
-    chown -R node:node /usr/src/app/data && \
-    chmod 755 /usr/src/app/data
 
 # Switch to non-root user
 USER node
