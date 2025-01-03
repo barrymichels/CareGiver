@@ -2,7 +2,7 @@ FROM node:18-slim
 
 # Install required packages
 RUN apt-get update && \
-    apt-get install -y sqlite3 curl gosu && \
+    apt-get install -y sqlite3 curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -17,13 +17,10 @@ RUN npm ci --only=production
 # Copy app source
 COPY . .
 
-# Copy and set up entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-# Create data directory and set initial permissions
+# Create data directory and set permissions
 RUN mkdir -p /usr/src/app/data && \
-    chown -R node:node /usr/src/app
+    chown -R 1000:1000 /usr/src/app && \
+    chmod -R 755 /usr/src/app/data
 
 # Set environment variables
 ENV NODE_ENV=production
@@ -37,6 +34,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3000/ || exit 1
 
-# Set entrypoint
-ENTRYPOINT ["docker-entrypoint.sh"]
+# Switch to non-root user
+USER 1000
+
+# Start the application
 CMD ["npm", "start"] 
