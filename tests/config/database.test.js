@@ -1,13 +1,29 @@
 const sqlite3 = require('sqlite3');
 const configureDatabase = require('../../config/database');
 const path = require('path');
+const fs = require('fs');
 
 // Mock process.exit before any tests run
 const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {});
 
+// Keep track of all database connections
+const openConnections = new Set();
+
+// Helper function to log open connections
+// function logOpenConnections() {
+//     console.log(`Open connections: ${openConnections.size}`);
+// }
+
+// Helper function to log active timers
+// function logActiveTimers() {
+//     const activeTimers = process._getActiveHandles().filter(handle => handle._onTimeout);
+//     console.log(`Active timers: ${activeTimers.length}`);
+// }
+
 describe('Database Configuration', () => {
     let db;
     const testDbPath = ':memory:';
+    const tmpDbPath = path.join(__dirname, 'temp.db');
 
     beforeEach(() => {
         // Save original console methods
@@ -15,19 +31,56 @@ describe('Database Configuration', () => {
         console._log = console.log;
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        // Log open connections and active timers
+        // logOpenConnections();
+        // logActiveTimers();
+
         // Restore original console methods
         console.error = console._error;
         console.log = console._log;
         
-        if (db) {
-            db.close();
-            db = null;
+        // Close all database connections with a timeout
+        try {
+            const closePromises = Array.from(openConnections).map(conn => 
+                new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        resolve(); // Don't reject, just resolve to prevent hanging
+                    }, 1000);
+
+                    conn.close((err) => {
+                        clearTimeout(timeout);
+                        if (err) {
+                            console.error('Error closing connection:', err);
+                            resolve(); // Don't reject, just resolve to prevent hanging
+                        } else {
+                            resolve();
+                        }
+                    });
+                })
+            );
+            
+            await Promise.all(closePromises);
+        } catch (err) {
+            console.error('Error in afterEach cleanup:', err);
+        } finally {
+            openConnections.clear();
         }
+
+        // Clean up temp files
+        [tmpDbPath, `${tmpDbPath}-wal`, `${tmpDbPath}-shm`].forEach(file => {
+            try {
+                if (fs.existsSync(file)) {
+                    fs.unlinkSync(file);
+                }
+            } catch (err) {
+                console.error(`Error cleaning up file ${file}:`, err);
+            }
+        });
 
         // Clear mock data
         mockExit.mockClear();
-    });
+    }, 10000); // Increase timeout for cleanup
 
     afterAll(() => {
         // Restore process.exit
@@ -35,16 +88,21 @@ describe('Database Configuration', () => {
     });
 
     it('should configure WAL mode for file-based database', async () => {
-        // Create a temporary database file
-        const tmpDbPath = path.join(__dirname, 'temp.db');
+        // Clean up any existing temp db file
+        if (fs.existsSync(tmpDbPath)) {
+            fs.unlinkSync(tmpDbPath);
+        }
+        
         const fileDb = configureDatabase(tmpDbPath);
+        openConnections.add(fileDb);
 
         try {
             // Wait for database to be ready and configured
-            await new Promise(resolve => {
+            await new Promise((resolve, reject) => {
                 fileDb.serialize(() => {
-                    fileDb.run('SELECT 1', () => {
-                        resolve();
+                    fileDb.run('SELECT 1', (err) => {
+                        if (err) reject(err);
+                        else resolve();
                     });
                 });
             });
@@ -52,21 +110,14 @@ describe('Database Configuration', () => {
             const journalMode = await new Promise((resolve, reject) => {
                 fileDb.get('PRAGMA journal_mode', (err, result) => {
                     if (err) reject(err);
-                    resolve(result.journal_mode);
+                    else resolve(result.journal_mode);
                 });
             });
 
             expect(journalMode).toBe('wal');
         } finally {
-            fileDb.close();
-            // Clean up the temporary file
-            require('fs').unlinkSync(tmpDbPath);
-            if (require('fs').existsSync(tmpDbPath + '-wal')) {
-                require('fs').unlinkSync(tmpDbPath + '-wal');
-            }
-            if (require('fs').existsSync(tmpDbPath + '-shm')) {
-                require('fs').unlinkSync(tmpDbPath + '-shm');
-            }
+            await new Promise(resolve => fileDb.close(resolve));
+            openConnections.delete(fileDb);
         }
     });
 
@@ -78,12 +129,14 @@ describe('Database Configuration', () => {
         // Try to open database with invalid path
         const invalidPath = path.join('nonexistent', 'dir', 'db.sqlite');
         
+        db = null;
         expect(() => {
             db = configureDatabase(invalidPath);
+            if (db) openConnections.add(db);
         }).not.toThrow(); // Should handle error gracefully
 
         // Wait for the error handler to be called
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Verify error was logged and process.exit was called
         expect(mockConsoleError).toHaveBeenCalledWith(
@@ -94,7 +147,7 @@ describe('Database Configuration', () => {
             })
         );
         expect(mockExit).toHaveBeenCalledWith(1);
-    });
+    }, 2000); // Add timeout
 
     describe('Development Environment', () => {
         const OLD_ENV = process.env;
@@ -108,11 +161,12 @@ describe('Database Configuration', () => {
             process.env = OLD_ENV;
         });
 
-        it('should log SQL queries in development', () => {
+        it('should log SQL queries in development', async () => {
             const mockConsoleLog = jest.fn();
             console.log = mockConsoleLog;
 
             db = configureDatabase(testDbPath);
+            openConnections.add(db);
 
             // Trigger a trace event
             db.emit('trace', 'SELECT * FROM test');
@@ -121,13 +175,14 @@ describe('Database Configuration', () => {
                 'SQL:',
                 'SELECT * FROM test'
             );
-        });
+        }, 2000);
 
-        it('should log slow queries in development', () => {
+        it('should log slow queries in development', async () => {
             const mockConsoleLog = jest.fn();
             console.log = mockConsoleLog;
 
             db = configureDatabase(testDbPath);
+            openConnections.add(db);
 
             // Trigger a profile event with a slow query (>100ms)
             db.emit('profile', 'SELECT * FROM test', 150);
@@ -136,19 +191,20 @@ describe('Database Configuration', () => {
                 'Slow query (150ms):',
                 'SELECT * FROM test'
             );
-        });
+        }, 2000);
 
-        it('should not log fast queries', () => {
+        it('should not log fast queries', async () => {
             const mockConsoleLog = jest.fn();
             console.log = mockConsoleLog;
 
             db = configureDatabase(testDbPath);
+            openConnections.add(db);
 
             // Trigger a profile event with a fast query (<100ms)
             db.emit('profile', 'SELECT * FROM test', 50);
 
             expect(mockConsoleLog).not.toHaveBeenCalled();
-        });
+        }, 2000);
     });
 
     describe('Production Environment', () => {
@@ -163,28 +219,30 @@ describe('Database Configuration', () => {
             process.env = OLD_ENV;
         });
 
-        it('should not log SQL queries in production', () => {
+        it('should not log SQL queries in production', async () => {
             const mockConsoleLog = jest.fn();
             console.log = mockConsoleLog;
 
             db = configureDatabase(testDbPath);
+            openConnections.add(db);
 
             // Trigger a trace event
             db.emit('trace', 'SELECT * FROM test');
 
             expect(mockConsoleLog).not.toHaveBeenCalled();
-        });
+        }, 2000);
 
-        it('should not log slow queries in production', () => {
+        it('should not log slow queries in production', async () => {
             const mockConsoleLog = jest.fn();
             console.log = mockConsoleLog;
 
             db = configureDatabase(testDbPath);
+            openConnections.add(db);
 
             // Trigger a profile event with a slow query
             db.emit('profile', 'SELECT * FROM test', 150);
 
             expect(mockConsoleLog).not.toHaveBeenCalled();
-        });
+        }, 2000);
     });
 }); 
