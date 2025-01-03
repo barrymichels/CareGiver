@@ -29,9 +29,15 @@ module.exports = function(db) {
 
     // Login submission
     router.post('/login',
-        passport.authenticate('local'),
+        passport.authenticate('local', {
+            failWithError: true
+        }),
         (req, res) => {
             res.json({ redirect: '/' });
+        },
+        (err, req, res, next) => {
+            console.error('Login error:', err);
+            res.status(401).json({ message: 'Invalid email or password' });
         }
     );
 

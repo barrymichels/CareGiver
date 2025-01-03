@@ -70,7 +70,6 @@ module.exports = (db) => {
                 res.redirect('/login');
             }
         } catch (error) {
-            console.error('Error rendering dashboard:', error);
             res.status(500).json({ error: 'Server error' });
         }
     });

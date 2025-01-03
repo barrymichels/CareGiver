@@ -41,10 +41,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Database connection and initialization
 const db = configureDatabase(process.env.DB_PATH);
-initializeDatabase(db).catch(err => {
-    console.error('Failed to initialize database:', err);
-    process.exit(1);
-});
+(async () => {
+    try {
+        await initializeDatabase(db);
+    } catch (err) {
+        console.error('Failed to initialize database:', err);
+        process.exit(1);
+    }
+})();
 
 // Passport configuration
 passport.use(new LocalStrategy(
@@ -68,8 +72,19 @@ passport.serializeUser((user, done) => {
 });
 
 passport.deserializeUser((id, done) => {
+  console.log('deserializeUser called with id:', id);
   db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
-    done(err, user);
+    console.log('deserializeUser query result:', { err, user });
+    if (err) {
+      console.error('Error in deserializeUser:', err);
+      return done(err);
+    }
+    if (!user) {
+      console.log('User not found in deserializeUser');
+      return done(null, false);
+    }
+    console.log('User found in deserializeUser:', user);
+    done(null, user);
   });
 });
 
@@ -100,9 +115,25 @@ app.get('/inactive', isAuthenticated, (req, res) => {
     res.render('inactive');
 });
 
-// Error handling middleware
+// Test route that throws an error
+app.get('/error', (req, res, next) => {
+    const error = new Error('Test error');
+    error.status = 500;
+    next(error);
+});
+
+// Error handling middleware - MUST be after all routes
 app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
+    console.error('Unhandled error caught by middleware:', err);
+    console.error('Error stack trace:', err.stack);
+    
+    // Set content type to application/json and other headers
+    res.set({
+        'Content-Type': 'application/json',
+        'X-Content-Type-Options': 'nosniff'
+    });
+    
+    // Send JSON response for errors
     res.status(500).json({ error: 'Server error' });
 });
 

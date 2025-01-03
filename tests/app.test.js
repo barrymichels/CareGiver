@@ -8,6 +8,14 @@ const { createTestUser, clearTestDb } = require('./helpers/testHelpers');
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
 
+// Mock the '../config/database.init' module
+jest.mock('../config/database.init', () => 
+    jest.fn().mockImplementation(async () => {
+        // Mock successful database initialization
+        return Promise.resolve();
+    })
+);
+
 // Mock external dependencies
 jest.mock('connect-sqlite3', () => {
     return () => function() {
@@ -17,6 +25,13 @@ jest.mock('connect-sqlite3', () => {
     };
 });
 
+// Mock bcrypt for password comparison
+jest.mock('bcrypt', () => ({
+    compare: jest.fn().mockImplementation(() => Promise.resolve(true)),
+    hash: jest.fn().mockImplementation(() => Promise.resolve('hashedPassword')),
+    genSalt: jest.fn().mockImplementation(() => Promise.resolve('salt'))
+}));
+
 // Save original environment
 const OLD_ENV = process.env;
 
@@ -25,6 +40,7 @@ describe('App', () => {
     let server;
     let originalConsoleLog;
     let originalConsoleError;
+    let initializeDatabase;
 
     beforeAll(async () => {
         // Mock environment variables
@@ -41,6 +57,9 @@ describe('App', () => {
         console.log = jest.fn();
         console.error = jest.fn();
 
+        // Get the mocked initializeDatabase function
+        initializeDatabase = require('../config/database.init');
+
         await initializeTestDb();
     });
 
@@ -49,6 +68,9 @@ describe('App', () => {
         
         // Clear module cache to get a fresh instance
         jest.resetModules();
+        
+        // Reset all mocks
+        jest.clearAllMocks();
 
         // Configure environment for testing
         process.env = {
@@ -64,6 +86,11 @@ describe('App', () => {
         
         // Create a test server with a random port
         server = app.listen(0);
+
+        // Add a route that throws an unhandled error for testing
+        app.get('/error', () => {
+            throw new Error('Unhandled error');
+        });
     });
 
     afterEach(async () => {
@@ -184,6 +211,69 @@ describe('App', () => {
             
             expect(response.status).toBe(200);
             expect(response.header['content-type']).toContain('text/css');
+        });
+    });
+
+    describe('Error Handling', () => {
+        test('should handle errors in LocalStrategy password comparison', async () => {
+            // Create a test user
+            const testUser = await createTestUser();
+
+            // Mock bcrypt.compare to reject with an error
+            const bcrypt = require('bcrypt');
+            bcrypt.compare.mockImplementationOnce(() => Promise.reject(new Error('Bcrypt error')));
+
+            // Attempt to login with the test user
+            const response = await request(app)
+                .post('/login')
+                .send({
+                    email: testUser.email,
+                    password: 'password123'
+                });
+
+            // Check that the login failed with the expected response
+            expect(response.statusCode).toBe(401);
+            expect(response.body).toEqual({ message: 'Invalid email or password' });
+        });
+
+        test('should handle missing user id in serializeUser', async () => {
+            const done = jest.fn();
+            const userWithoutId = { email: 'test@example.com' };
+
+            // Call serializeUser with a user object missing the id
+            passport.serializeUser(userWithoutId, done);
+
+            // Check that done was called with an error
+            expect(done).toHaveBeenCalledWith(expect.any(Error));
+        });
+
+        test('should handle user not found in deserializeUser', (done) => {
+            // Configure passport deserializeUser to use testDb
+            passport.deserializeUser((id, done) => {
+                testDb.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
+                    if (err) return done(err);
+                    if (!user) return done(null, false);
+                    done(null, user);
+                });
+            });
+
+            // Call deserializeUser with an invalid user id
+            passport.deserializeUser(999, (err, user) => {
+                expect(err).toBeNull();
+                expect(user).toBe(false);
+                done();
+            });
+        });
+
+        test('should handle unhandled errors', async () => {
+            // Make a request to the /error route
+            const response = await request(app)
+                .get('/error')
+                .expect(500)
+                .expect('Content-Type', /json/);
+
+            // Check that the error response matches the expected format
+            expect(response.body).toEqual({ error: 'Server error' });
         });
     });
 }); 
