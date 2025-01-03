@@ -15,8 +15,13 @@ RUN npm ci --only=production
 # Copy app source
 COPY . .
 
-# Switch to non-root user
-USER node
+# Copy and set up entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Create data directory
+RUN mkdir -p /usr/src/app/data && \
+    chown -R node:node /usr/src/app
 
 # Set environment variables
 ENV NODE_ENV=production
@@ -30,5 +35,9 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3000/ || exit 1
 
-# Start the application
+# Switch to non-root user
+USER node
+
+# Set entrypoint
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["npm", "start"] 
