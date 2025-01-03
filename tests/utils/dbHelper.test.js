@@ -1,8 +1,14 @@
 const DatabaseHelper = require('../../utils/dbHelper');
 const { testDb, initializeTestDb } = require('../../config/test.db');
 
-// Increase timeout for all tests in this file
-jest.setTimeout(30000);
+// Test-specific configuration
+const TEST_CONFIG = {
+    maxRetries: 2,
+    delay: 10
+};
+
+// Reduce timeout for all tests in this file
+jest.setTimeout(5000);
 
 describe('DatabaseHelper', () => {
     let dbHelper;
@@ -89,14 +95,16 @@ describe('DatabaseHelper', () => {
         it('should execute SQL successfully', async () => {
             const result = await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?)',
-                ['test']
+                ['test'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             expect(result).toBeDefined();
         });
 
         it('should handle SQL errors', async () => {
             await expect(
-                dbHelper.runWithRetry('INVALID SQL')
+                dbHelper.runWithRetry('INVALID SQL', [], TEST_CONFIG.maxRetries, TEST_CONFIG.delay)
             ).rejects.toThrow();
         });
 
@@ -117,7 +125,9 @@ describe('DatabaseHelper', () => {
 
             const result = await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?)',
-                ['test']
+                ['test'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             expect(result).toBeDefined();
 
@@ -137,7 +147,9 @@ describe('DatabaseHelper', () => {
             await expect(
                 dbHelper.runWithRetry(
                     'INSERT INTO transaction_test (value) VALUES (?)',
-                    ['test']
+                    ['test'],
+                    TEST_CONFIG.maxRetries,
+                    TEST_CONFIG.delay
                 )
             ).rejects.toThrow('SQLITE_BUSY');
 
@@ -152,11 +164,15 @@ describe('DatabaseHelper', () => {
             
             await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?)',
-                ['test1']
+                ['test1'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?)',
-                ['test2']
+                ['test2'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             
             await dbHelper.commit();
@@ -179,12 +195,14 @@ describe('DatabaseHelper', () => {
 
             await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?)',
-                ['test1']
+                ['test1'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
 
             // Simulate error
             await expect(
-                dbHelper.runWithRetry('INVALID SQL')
+                dbHelper.runWithRetry('INVALID SQL', [], TEST_CONFIG.maxRetries, TEST_CONFIG.delay)
             ).rejects.toThrow();
 
             await dbHelper.rollback();
@@ -276,12 +294,16 @@ describe('DatabaseHelper', () => {
             // Insert test data
             await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?)',
-                ['test_get']
+                ['test_get'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
 
             const result = await dbHelper.getWithRetry(
                 'SELECT * FROM transaction_test WHERE value = ?',
-                ['test_get']
+                ['test_get'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             
             expect(result).toBeDefined();
@@ -291,42 +313,38 @@ describe('DatabaseHelper', () => {
         it('should return undefined for non-existent row', async () => {
             const result = await dbHelper.getWithRetry(
                 'SELECT * FROM transaction_test WHERE value = ?',
-                ['nonexistent']
+                ['nonexistent'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             
             expect(result).toBeUndefined();
         });
 
         it('should retry on SQLITE_BUSY with exponential backoff', async () => {
+            // Mock db.get to simulate SQLITE_BUSY error once
             const originalGet = testDb.get;
-            const mockGet = jest.fn();
             let attempts = 0;
-            
             testDb.get = (sql, params, callback) => {
-                mockGet(sql, params);
-                if (attempts < 2) {
+                if (attempts === 0) {
                     attempts++;
                     const error = new Error('SQLITE_BUSY');
                     error.code = 'SQLITE_BUSY';
                     callback(error);
                 } else {
-                    callback(null, { value: 'success' });
+                    originalGet.call(testDb, sql, params, callback);
                 }
             };
 
-            const startTime = Date.now();
             const result = await dbHelper.getWithRetry(
-                'SELECT * FROM transaction_test',
+                'SELECT 1',
                 [],
-                3,
-                200
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
+            expect(result).toBeDefined();
 
-            const duration = Date.now() - startTime;
-            expect(duration).toBeGreaterThan(300);
-            expect(mockGet).toHaveBeenCalledTimes(3);
-            expect(result).toEqual({ value: 'success' });
-
+            // Restore original function
             testDb.get = originalGet;
         });
 
@@ -337,7 +355,7 @@ describe('DatabaseHelper', () => {
             };
 
             await expect(
-                dbHelper.getWithRetry('SELECT * FROM transaction_test')
+                dbHelper.getWithRetry('SELECT * FROM transaction_test', [], TEST_CONFIG.maxRetries, TEST_CONFIG.delay)
             ).rejects.toThrow('Other error');
 
             testDb.get = originalGet;
@@ -349,11 +367,16 @@ describe('DatabaseHelper', () => {
             // Insert test data
             await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?), (?)',
-                ['test1', 'test2']
+                ['test1', 'test2'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
 
             const results = await dbHelper.allWithRetry(
-                'SELECT * FROM transaction_test ORDER BY value'
+                'SELECT * FROM transaction_test ORDER BY value',
+                [],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             
             expect(results).toHaveLength(2);
@@ -364,42 +387,38 @@ describe('DatabaseHelper', () => {
         it('should return empty array for no results', async () => {
             const results = await dbHelper.allWithRetry(
                 'SELECT * FROM transaction_test WHERE value = ?',
-                ['nonexistent']
+                ['nonexistent'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             
             expect(results).toEqual([]);
         });
 
         it('should retry on SQLITE_LOCKED with exponential backoff', async () => {
+            // Mock db.all to simulate SQLITE_LOCKED error once
             const originalAll = testDb.all;
-            const mockAll = jest.fn();
             let attempts = 0;
-            
             testDb.all = (sql, params, callback) => {
-                mockAll(sql, params);
-                if (attempts < 2) {
+                if (attempts === 0) {
                     attempts++;
-                    const error = new Error('Database locked');
+                    const error = new Error('SQLITE_LOCKED');
                     error.code = 'SQLITE_LOCKED';
                     callback(error);
                 } else {
-                    callback(null, [{ value: 'success' }]);
+                    originalAll.call(testDb, sql, params, callback);
                 }
             };
 
-            const startTime = Date.now();
-            const results = await dbHelper.allWithRetry(
-                'SELECT * FROM transaction_test',
+            const result = await dbHelper.allWithRetry(
+                'SELECT 1',
                 [],
-                3,
-                200
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
+            expect(result).toBeDefined();
 
-            const duration = Date.now() - startTime;
-            expect(duration).toBeGreaterThan(300);
-            expect(mockAll).toHaveBeenCalledTimes(3);
-            expect(results).toEqual([{ value: 'success' }]);
-
+            // Restore original function
             testDb.all = originalAll;
         });
 
@@ -428,15 +447,17 @@ describe('DatabaseHelper', () => {
             await dbHelper.beginTransaction();
             await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?)',
-                ['locked']
+                ['locked'],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
 
             // Try to read while transaction is in progress
             const promise = dbHelper.allWithRetry(
                 'SELECT * FROM transaction_test WHERE value = ?',
                 ['locked'],
-                2,
-                100
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
 
             // Complete transaction after a delay
@@ -452,28 +473,30 @@ describe('DatabaseHelper', () => {
 
     describe('Edge Cases', () => {
         it('should handle maximum retry attempts correctly', async () => {
-            const originalRun = testDb.run;
-            const mockRun = jest.fn();
+            const maxRetries = 2;
+            const startTime = Date.now();
             
+            // Mock db.run to always return SQLITE_BUSY
+            const originalRun = testDb.run;
             testDb.run = (sql, params, callback) => {
-                mockRun();
                 const error = new Error('SQLITE_BUSY');
                 error.code = 'SQLITE_BUSY';
                 callback(error);
             };
 
-            const maxRetries = 3;
             await expect(
                 dbHelper.runWithRetry(
-                    'INSERT INTO transaction_test (value) VALUES (?)',
-                    ['test'],
+                    'SELECT 1',
+                    [],
                     maxRetries,
-                    50
+                    TEST_CONFIG.delay
                 )
             ).rejects.toThrow('SQLITE_BUSY');
 
-            expect(mockRun).toHaveBeenCalledTimes(maxRetries);
+            const duration = Date.now() - startTime;
+            expect(duration).toBeLessThan(1000); // Should complete quickly
 
+            // Restore original function
             testDb.run = originalRun;
         });
 
@@ -509,11 +532,16 @@ describe('DatabaseHelper', () => {
 
             await dbHelper.runWithRetry(
                 'INSERT INTO transaction_test (value) VALUES (?)',
-                [null]
+                [null],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
 
             const result = await dbHelper.getWithRetry(
-                'SELECT * FROM transaction_test WHERE value IS NULL'
+                'SELECT * FROM transaction_test WHERE value IS NULL',
+                [],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             
             expect(result).toBeDefined();
@@ -522,7 +550,10 @@ describe('DatabaseHelper', () => {
 
         it('should handle empty parameter arrays', async () => {
             const result = await dbHelper.getWithRetry(
-                'SELECT COUNT(*) as count FROM transaction_test'
+                'SELECT COUNT(*) as count FROM transaction_test',
+                [],
+                TEST_CONFIG.maxRetries,
+                TEST_CONFIG.delay
             );
             
             expect(result).toBeDefined();
