@@ -562,5 +562,80 @@ describe('Index Routes', () => {
             // Clean up
             await new Promise(resolve => errorDb.close(resolve));
         });
+
+        describe('Week Calculation', () => {
+            let agent;
+            let mockDate;
+            
+            beforeEach(async () => {
+                agent = request.agent(app);
+                
+                // Set user as active
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        'UPDATE users SET is_active = 1 WHERE id = ?',
+                        [testUser.id],
+                        (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        }
+                    );
+                });
+
+                // Login
+                await agent
+                    .post('/login')
+                    .send({ email: testUser.email, password: 'password123' });
+
+                // Mock render to capture data
+                app.engine('ejs', (path, data, cb) => {
+                    mockDate = data.weekStart;
+                    cb(null, 'rendered');
+                });
+            });
+
+            it('should show the correct week when accessed on Sunday', async () => {
+                const sunday = new Date('2025-01-05');
+                sunday.setHours(12, 0, 0, 0);  // Set to noon to avoid timezone issues
+                jest.useFakeTimers().setSystemTime(sunday);
+
+                await agent.get('/');
+                
+                expect(mockDate.toISOString().split('T')[0]).toBe('2024-12-30');
+                expect(mockDate.getDay()).toBe(1);  // Should be a Monday
+
+                jest.useRealTimers();
+            });
+
+            it('should show current week when accessed on other days', async () => {
+                // Mock Wednesday (January 3, 2024)
+                const wednesday = new Date('2024-01-03');
+                wednesday.setHours(12, 0, 0, 0);  // Set to noon to avoid timezone issues
+                jest.useFakeTimers().setSystemTime(wednesday);
+
+                await agent.get('/');
+                
+                // Should show week starting from Monday (January 1)
+                expect(mockDate.toISOString().split('T')[0]).toBe('2024-01-01');
+                expect(mockDate.getDay()).toBe(1);  // Should be a Monday
+
+                jest.useRealTimers();
+            });
+
+            it('should set correct time boundaries', async () => {
+                const wednesday = new Date('2024-01-03');
+                jest.useFakeTimers().setSystemTime(wednesday);
+
+                await agent.get('/');
+                
+                // Week start should be at 00:00:00
+                expect(mockDate.getHours()).toBe(0);
+                expect(mockDate.getMinutes()).toBe(0);
+                expect(mockDate.getSeconds()).toBe(0);
+                expect(mockDate.getMilliseconds()).toBe(0);
+
+                jest.useRealTimers();
+            });
+        });
     });
 }); 

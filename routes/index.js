@@ -28,9 +28,15 @@ module.exports = (db) => {
             if (req.isAuthenticated()) {
                 const today = new Date();
                 const weekStart = new Date(today);
-                weekStart.setDate(today.getDate() - today.getDay() + 1); // Start from Monday
+                // If today is Sunday (0), we want to show this week (starting tomorrow)
+                // For all other days, we show the current week
+                const daysUntilMonday = today.getDay() === 0 ? 1 : (1 - today.getDay());
+                weekStart.setDate(today.getDate() + daysUntilMonday);
+                weekStart.setHours(0, 0, 0, 0);  // Set to start of day
+                
                 const weekEnd = new Date(weekStart);
                 weekEnd.setDate(weekStart.getDate() + 6);
+                weekEnd.setHours(23, 59, 59, 999);  // Set to end of day
 
                 // Get assignments for the week
                 const assignments = await new Promise((resolve, reject) => {
