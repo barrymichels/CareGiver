@@ -28,7 +28,13 @@ module.exports = (db) => {
             if (req.isAuthenticated()) {
                 const today = new Date();
                 const weekStart = new Date(today);
-                weekStart.setDate(today.getDate() - today.getDay() + 1); // Start from Monday
+                // If today is Sunday (0), set weekStart to the previous Monday
+                if (today.getDay() === 0) {
+                    weekStart.setDate(today.getDate() - 6);
+                } else {
+                    // Otherwise set to Monday of current week
+                    weekStart.setDate(today.getDate() - (weekStart.getDay() - 1));
+                }
                 const weekEnd = new Date(weekStart);
                 weekEnd.setDate(weekStart.getDate() + 6);
 
@@ -75,4 +81,4 @@ module.exports = (db) => {
     });
 
     return router;
-}; 
+};
