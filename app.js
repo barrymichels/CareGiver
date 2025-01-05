@@ -47,7 +47,7 @@ app.use(session({
   cookie: {
     maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
     httpOnly: true,
-    secure: true,  // Always use secure cookies since we're behind HTTPS proxy
+    secure: process.env.NODE_ENV === 'production', // Only require HTTPS in production
     sameSite: 'lax',  // Keep lax for OAuth
     path: '/',
     proxy: true  // Trust the reverse proxy
