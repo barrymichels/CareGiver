@@ -3,7 +3,7 @@ const passport = require('passport');
 const bcrypt = require('bcrypt');
 const router = express.Router();
 
-module.exports = function(db) {
+module.exports = function (db) {
     // Check if setup is required
     function checkSetupRequired() {
         return new Promise((resolve, reject) => {
@@ -33,6 +33,13 @@ module.exports = function(db) {
             failWithError: true
         }),
         (req, res) => {
+            // Check if user is active
+            if (!req.user.is_active) {
+                req.logout(() => {
+                    res.status(403).json({ error: 'Account not activated' });
+                });
+                return;
+            }
             res.json({ redirect: '/' });
         },
         (err, req, res, next) => {
@@ -66,7 +73,7 @@ module.exports = function(db) {
             }
 
             const hashedPassword = await bcrypt.hash(password, 10);
-            
+
             // First check if email exists
             const existingUser = await new Promise((resolve, reject) => {
                 db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
@@ -84,7 +91,7 @@ module.exports = function(db) {
                 db.run(
                     'INSERT INTO users (first_name, last_name, email, password) VALUES (?, ?, ?, ?)',
                     [firstName.trim(), lastName.trim(), email.toLowerCase(), hashedPassword],
-                    function(err) {
+                    function (err) {
                         if (err) reject(err);
                         resolve();
                     }
@@ -147,9 +154,9 @@ module.exports = function(db) {
             }
 
             const hashedPassword = await bcrypt.hash(password, 10);
-            
+
             db.run(
-                'INSERT INTO users (first_name, last_name, email, password, is_admin) VALUES (?, ?, ?, ?, 1)',
+                'INSERT INTO users (first_name, last_name, email, password, is_admin, is_active) VALUES (?, ?, ?, ?, 1, 1)',
                 [firstName.trim(), lastName.trim(), email.toLowerCase(), hashedPassword],
                 (err) => {
                     if (err) {
@@ -163,5 +170,58 @@ module.exports = function(db) {
         }
     });
 
+    // OAuth2 login route
+    router.get('/auth/login', (req, res, next) => {
+        passport.authenticate('oauth2', {
+            successRedirect: '/',
+            failureRedirect: '/login',
+            failureFlash: true
+        })(req, res, next);
+    });
+
+    // OAuth2 callback route
+    router.get('/auth/callback',
+        passport.authenticate('oauth2', {
+            successRedirect: '/',
+            failureRedirect: '/login',
+            failureFlash: true
+        })
+    );
+
     return router;
-}; 
+};
+
+const handleSubmit = async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+
+    try {
+        const response = await fetch(form.action, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        });
+
+        const responseData = await response.json();
+
+        if (response.ok) {
+            if (responseData.redirect) {
+                window.location.href = responseData.redirect;
+            } else if (form.id === 'register-form') {
+                showMessage(form, responseData.message, 'success');
+                document.querySelector('[data-form="login"]').click();
+                form.reset();
+            }
+        } else if (response.status === 403) {
+            window.location.href = '/inactive';
+        } else {
+            showMessage(form, responseData.error || responseData.message, 'error');
+        }
+    } catch (error) {
+        showMessage(form, 'An error occurred. Please try again.', 'error');
+    }
+};

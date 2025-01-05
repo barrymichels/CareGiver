@@ -18,7 +18,8 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+        Ubuntu, Cantarell, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
     min-height: 100vh;
@@ -214,4 +215,21 @@ input:not(:placeholder-shown):invalid + .validation-message {
 
 input:focus + .password-requirements {
     color: rgba(255, 255, 255, 0.7);
-} 
+}
+
+.oauth-login {
+    margin-top: 1rem;
+}
+
+.oauth-login .submit-btn {
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+}
+
+.oauth-login .submit-btn:hover {
+    background-color: var(--card-bg);
+    border-color: var(--primary-color);
+}

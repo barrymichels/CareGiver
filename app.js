@@ -13,6 +13,22 @@ const initializeDatabase = require('./config/database.init');
 
 const app = express();
 
+// Database connection and initialization first
+const db = configureDatabase(process.env.DB_PATH);
+
+// Now we can configure OAuth2 after db is initialized
+require('./config/oauth2')(passport, db);
+
+// Initialize database tables
+(async () => {
+  try {
+    await initializeDatabase(db);
+  } catch (err) {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+  }
+})();
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -31,24 +47,13 @@ app.use(session({
     maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    sameSite: 'lax' // Changed from strict to allow OAuth redirects
   }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
 app.set('view engine', 'ejs');
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Database connection and initialization
-const db = configureDatabase(process.env.DB_PATH);
-(async () => {
-    try {
-        await initializeDatabase(db);
-    } catch (err) {
-        console.error('Failed to initialize database:', err);
-        process.exit(1);
-    }
-})();
 
 // Passport configuration
 passport.use(new LocalStrategy(
@@ -57,7 +62,7 @@ passport.use(new LocalStrategy(
     db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, user) => {
       if (err) return done(err);
       if (!user) return done(null, false, { message: 'Invalid email or password' });
-      
+
       bcrypt.compare(password, user.password, (err, isMatch) => {
         if (err) return done(err);
         if (!isMatch) return done(null, false, { message: 'Invalid email or password' });
@@ -72,18 +77,9 @@ passport.serializeUser((user, done) => {
 });
 
 passport.deserializeUser((id, done) => {
-  console.log('deserializeUser called with id:', id);
   db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
-    console.log('deserializeUser query result:', { err, user });
-    if (err) {
-      console.error('Error in deserializeUser:', err);
-      return done(err);
-    }
-    if (!user) {
-      console.log('User not found in deserializeUser');
-      return done(null, false);
-    }
-    console.log('User found in deserializeUser:', user);
+    if (err) return done(err);
+    if (!user) return done(null, false);
     done(null, user);
   });
 });
@@ -109,45 +105,45 @@ app.use('/', indexRoutes);
 
 // Add inactive account route
 app.get('/inactive', isAuthenticated, (req, res) => {
-    if (req.user.is_active) {
-        return res.redirect('/');
-    }
-    res.render('inactive');
+  if (req.user.is_active) {
+    return res.redirect('/');
+  }
+  res.render('inactive');
 });
 
 // Test route that throws an error
 app.get('/error', (req, res, next) => {
-    const error = new Error('Test error');
-    error.status = 500;
-    next(error);
+  const error = new Error('Test error');
+  error.status = 500;
+  next(error);
 });
 
 // Error handling middleware - MUST be after all routes
 app.use((err, req, res, next) => {
-    console.error('Unhandled error caught by middleware:', err);
-    console.error('Error stack trace:', err.stack);
-    
-    // Set content type to application/json and other headers
-    res.set({
-        'Content-Type': 'application/json',
-        'X-Content-Type-Options': 'nosniff'
-    });
-    
-    // Send JSON response for errors
-    res.status(500).json({ error: 'Server error' });
+  console.error('Unhandled error caught by middleware:', err);
+  console.error('Error stack trace:', err.stack);
+
+  // Set content type to application/json and other headers
+  res.set({
+    'Content-Type': 'application/json',
+    'X-Content-Type-Options': 'nosniff'
+  });
+
+  // Send JSON response for errors
+  res.status(500).json({ error: 'Server error' });
 });
 
 // Move server creation to a separate function
 function startServer() {
-    const PORT = process.env.PORT || 3000;
-    return app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
+  const PORT = process.env.PORT || 3000;
+  return app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 }
 
 // Only start the server if this file is run directly (not imported as a module)
 if (require.main === module) {
-    startServer();
+  startServer();
 }
 
-module.exports = { app, startServer }; 
+module.exports = { app, startServer };

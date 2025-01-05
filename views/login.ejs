@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login / Register</title>
     <link rel="stylesheet" href="/css/style.css">
 </head>
+
 <body>
     <div class="container">
         <div class="form-container">
@@ -23,31 +25,34 @@
                     <input type="password" name="password" placeholder="Password" required>
                 </div>
                 <button type="submit" class="submit-btn">Login</button>
+                <div class="oauth-login">
+                    <a href="/auth/login" class="submit-btn">
+                        Login with Authentik
+                    </a>
+                </div>
             </form>
 
             <form id="register-form" class="form" action="/register" method="POST">
                 <h2>Register</h2>
                 <div class="form-group">
-                    <input type="text" name="firstName" placeholder="First name" required
-                           pattern="[A-Za-z\-']+" title="Letters, hyphens, and apostrophes only">
+                    <input type="text" name="firstName" placeholder="First name" required pattern="[A-Za-z\-']+"
+                        title="Letters, hyphens, and apostrophes only">
                 </div>
                 <div class="form-group">
-                    <input type="text" name="lastName" placeholder="Last name" required
-                           pattern="[A-Za-z\-']+" title="Letters, hyphens, and apostrophes only">
+                    <input type="text" name="lastName" placeholder="Last name" required pattern="[A-Za-z\-']+"
+                        title="Letters, hyphens, and apostrophes only">
                 </div>
                 <div class="form-group">
                     <input type="email" name="email" placeholder="Email address" required>
                 </div>
                 <div class="form-group">
-                    <input type="password" name="password" 
-                           placeholder="Password" minlength="8" required>
+                    <input type="password" name="password" placeholder="Password" minlength="8" required>
                     <div class="password-requirements">
                         Password must be at least 8 characters long
                     </div>
                 </div>
                 <div class="form-group">
-                    <input type="password" name="confirmPassword" 
-                           placeholder="Confirm password" minlength="8" required>
+                    <input type="password" name="confirmPassword" placeholder="Confirm password" minlength="8" required>
                 </div>
                 <button type="submit" class="submit-btn">Register</button>
             </form>
@@ -55,4 +60,5 @@
     </div>
     <script src="/js/auth.js"></script>
 </body>
-</html> 
+
+</html>
