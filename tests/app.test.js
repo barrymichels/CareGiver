@@ -25,6 +25,13 @@ jest.mock('connect-sqlite3', () => {
     };
 });
 
+// Mock OAuth2 module
+jest.mock('../config/oauth2', () => {
+    return jest.fn().mockImplementation((passport, db) => {
+        // Do nothing in test environment
+    });
+});
+
 // Mock bcrypt for password comparison
 jest.mock('bcrypt', () => ({
     compare: jest.fn().mockImplementation(() => Promise.resolve(true)),

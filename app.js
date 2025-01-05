@@ -37,7 +37,8 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   store: new SQLiteStore({
-    db: process.env.DB_PATH,
+    db: 'sessions.sqlite',  // Separate sessions database
+    dir: './data',         // Store in data directory
     // Time to live in milliseconds (14 days)
     ttl: 14 * 24 * 60 * 60 * 1000,
     // Cleanup expired sessions
@@ -46,14 +47,19 @@ app.use(session({
   cookie: {
     maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' // Changed from strict to allow OAuth redirects
+    secure: true,  // Always use secure cookies since we're behind HTTPS proxy
+    sameSite: 'lax',  // Keep lax for OAuth
+    path: '/',
+    proxy: true  // Trust the reverse proxy
   }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
 app.set('view engine', 'ejs');
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Add trust proxy setting for Express
+app.set('trust proxy', 1);  // Trust first proxy
 
 // Passport configuration
 passport.use(new LocalStrategy(

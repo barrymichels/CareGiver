@@ -2,6 +2,26 @@ const OAuth2Strategy = require('passport-oauth2').Strategy;
 const axios = require('axios');
 
 module.exports = function (passport, db) {
+    // Skip OAuth2 setup in test environment
+    if (process.env.NODE_ENV === 'test') {
+        return;
+    }
+
+    // Verify required environment variables
+    const requiredEnvVars = [
+        'AUTHENTIK_AUTH_URL',
+        'AUTHENTIK_TOKEN_URL',
+        'AUTHENTIK_CLIENT_ID',
+        'AUTHENTIK_CLIENT_SECRET',
+        'AUTHENTIK_CALLBACK_URL'
+    ];
+
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    if (missingVars.length > 0) {
+        console.warn(`OAuth2 configuration skipped. Missing environment variables: ${missingVars.join(', ')}`);
+        return;
+    }
+
     passport.use('oauth2', new OAuth2Strategy({
         authorizationURL: process.env.AUTHENTIK_AUTH_URL,
         tokenURL: process.env.AUTHENTIK_TOKEN_URL,
