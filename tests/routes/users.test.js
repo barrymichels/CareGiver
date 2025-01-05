@@ -3,7 +3,7 @@ const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
 const { testDb, initializeTestDb } = require('../../config/test.db');
-const { createTestUser, clearTestDb } = require('../helpers/testHelpers');
+const { createTestUser, clearTestDb, normalizeViewPath } = require('../helpers/testHelpers');
 
 // Create express app for testing
 const app = express();
@@ -41,7 +41,7 @@ describe('User Routes', () => {
 
     beforeEach(async () => {
         await clearTestDb();
-        
+
         // Create an admin user
         adminUser = await createTestUser({
             email: 'admin@example.com',
@@ -77,13 +77,13 @@ describe('User Routes', () => {
                 .expect(200);
 
             const rendered = JSON.parse(response.text);
-            expect(rendered.view).toContain('users/manage');
+            expect(normalizeViewPath(rendered.view)).toContain('users/manage');
             expect(rendered.data).toHaveProperty('users');
-            
+
             // Should only show the regular user (not the admin user)
             expect(rendered.data.users).toHaveLength(1);
             expect(rendered.data.users[0].id).toBe(regularUser.id);
-            
+
             const user = rendered.data.users[0];
             expect(user).toHaveProperty('email');
             expect(user).toHaveProperty('is_admin');
@@ -174,4 +174,4 @@ describe('User Routes', () => {
             expect(result).toBeUndefined();
         });
     });
-}); 
+});

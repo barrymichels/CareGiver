@@ -5,7 +5,7 @@ const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
 const { testDb, initializeTestDb } = require('../../config/test.db');
-const { createTestUser, clearTestDb } = require('../helpers/testHelpers');
+const { createTestUser, clearTestDb, normalizeViewPath } = require('../helpers/testHelpers');
 
 // Create express app for testing
 const app = express();
@@ -35,7 +35,7 @@ passport.use(new LocalStrategy(
         testDb.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, user) => {
             if (err) return done(err);
             if (!user) return done(null, false, { message: 'Invalid email or password' });
-            
+
             bcrypt.compare(password, user.password, (err, isMatch) => {
                 if (err) return done(err);
                 if (!isMatch) return done(null, false, { message: 'Invalid email or password' });
@@ -71,7 +71,7 @@ app.use((err, req, res, next) => {
 describe('Auth Routes', () => {
     // Helper function to get view name from full path
     function getViewName(fullPath) {
-        return fullPath.split('/').pop().replace('.ejs', '');
+        return normalizeViewPath(fullPath);
     }
 
     beforeAll(async () => {
@@ -86,11 +86,11 @@ describe('Auth Routes', () => {
         it('should render login page when not logged in', async () => {
             // Create a user first so it doesn't redirect to setup
             await createTestUser();
-            
+
             const response = await request(app)
                 .get('/login');
             expect(response.status).toBe(200);
-            
+
             // Parse the response to verify the correct view was rendered
             const rendered = JSON.parse(response.text);
             expect(getViewName(rendered.view)).toBe('login');
@@ -125,7 +125,7 @@ describe('Auth Routes', () => {
             const response = await request(app)
                 .get('/setup');
             expect(response.status).toBe(200);
-            
+
             // Parse the response to verify the correct view was rendered
             const rendered = JSON.parse(response.text);
             expect(getViewName(rendered.view)).toBe('setup');
@@ -375,7 +375,7 @@ describe('Auth Routes', () => {
             // First login
             const user = await createTestUser();
             const agent = request.agent(app);
-            
+
             await agent
                 .post('/login')
                 .send({
@@ -393,7 +393,7 @@ describe('Auth Routes', () => {
             // First login
             const user = await createTestUser();
             const agent = request.agent(app);
-            
+
             await agent
                 .post('/login')
                 .send({
@@ -407,7 +407,7 @@ describe('Auth Routes', () => {
             // Create a new router with error-throwing logout
             const express = require('express');
             const router = express.Router();
-            
+
             // Add error-throwing logout route
             router.get('/logout', (req, res, next) => {
                 next(new Error('Logout error'));
@@ -430,4 +430,4 @@ describe('Auth Routes', () => {
             app._router.stack = oldStack;
         });
     });
-}); 
+});

@@ -4,7 +4,7 @@ const session = require('express-session');
 const passport = require('passport');
 const path = require('path');
 const { testDb, initializeTestDb } = require('../../config/test.db');
-const { createTestUser, clearTestDb, createAvailability } = require('../helpers/testHelpers');
+const { createTestUser, clearTestDb, createAvailability, normalizeViewPath } = require('../helpers/testHelpers');
 
 // Create express app for testing
 const app = express();
@@ -57,9 +57,9 @@ describe('Admin Routes', () => {
         testDb.run = originalRun;
         testDb.all = originalAll;
         console.error = originalConsoleError;
-        
+
         await clearTestDb();
-        
+
         // Create an admin user
         adminUser = await createTestUser({
             email: 'admin@example.com',
@@ -141,7 +141,7 @@ describe('Admin Routes', () => {
 
             const rendered = JSON.parse(response.text);
             const users = rendered.data.users;
-            
+
             // Should only include active users (admin and regular user)
             expect(users.length).toBe(2);
             expect(users.some(u => u.id === adminUser.id)).toBe(true);
@@ -151,7 +151,7 @@ describe('Admin Routes', () => {
         it('should handle database errors gracefully', async () => {
             // Suppress expected error logs
             console.error = jest.fn();
-            
+
             testDb.all = (sql, params, callback) => {
                 if (typeof params === 'function') {
                     callback = params;
@@ -165,7 +165,7 @@ describe('Admin Routes', () => {
                 .expect(500);
 
             const rendered = JSON.parse(response.text);
-            expect(rendered.view).toBe('error');
+            expect(normalizeViewPath(rendered.view)).toBe('error');
             expect(rendered.data.message).toBe('Server error');
             expect(console.error).toHaveBeenCalled();
         });
@@ -178,10 +178,10 @@ describe('Admin Routes', () => {
                 .expect(200);
 
             const rendered = JSON.parse(response.text);
-            expect(rendered.view).toContain('admin/users');
+            expect(normalizeViewPath(rendered.view)).toContain('admin/users');
             expect(rendered.data).toHaveProperty('users');
             expect(rendered.data.users).toHaveLength(2); // admin and regular user
-            
+
             const users = rendered.data.users;
             expect(users[0]).toHaveProperty('email');
             expect(users[0]).toHaveProperty('is_admin');
@@ -191,7 +191,7 @@ describe('Admin Routes', () => {
         it('should handle database errors gracefully', async () => {
             // Suppress expected error logs
             console.error = jest.fn();
-            
+
             testDb.all = (sql, params, callback) => {
                 if (typeof params === 'function') {
                     callback = params;
@@ -205,7 +205,7 @@ describe('Admin Routes', () => {
                 .expect(500);
 
             const rendered = JSON.parse(response.text);
-            expect(rendered.view).toBe('error');
+            expect(normalizeViewPath(rendered.view)).toBe('error');
             expect(rendered.data.message).toBe('Server error');
             expect(console.error).toHaveBeenCalled();
         });
@@ -348,7 +348,7 @@ describe('Admin Routes', () => {
                     callback = params;
                     params = [];
                 }
-                
+
                 if (sql.includes('BEGIN')) {
                     callback(new Error('Transaction error'));
                 } else if (sql.includes('ROLLBACK')) {
@@ -491,14 +491,14 @@ describe('Admin Routes', () => {
         it('should handle database errors', async () => {
             // Suppress expected error logs
             console.error = jest.fn();
-            
+
             // Mock the database function to simulate a database error
             testDb.run = jest.fn().mockImplementation((sql, params, callback) => {
                 if (typeof params === 'function') {
                     callback = params;
                     params = [];
                 }
-                
+
                 if (sql.includes('UPDATE users')) {
                     callback(new Error('Database error'));
                 } else if (sql.includes('ROLLBACK')) {
@@ -518,4 +518,4 @@ describe('Admin Routes', () => {
             expect(console.error).toHaveBeenCalled();
         });
     });
-}); 
+});

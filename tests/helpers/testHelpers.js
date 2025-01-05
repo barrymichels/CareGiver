@@ -15,7 +15,7 @@ async function createTestUser(userData = {}) {
     };
 
     const user = { ...defaultUser, ...userData };
-    
+
     // Ensure password is hashed if it was provided in userData
     if (userData.password) {
         user.password = await bcrypt.hash(userData.password, 10);
@@ -35,7 +35,7 @@ async function createTestUser(userData = {}) {
                 `INSERT INTO users (first_name, last_name, email, password, is_admin, is_active)
                  VALUES (?, ?, ?, ?, ?, ?)`,
                 [user.first_name, user.last_name, user.email, user.password, user.is_admin, user.is_active],
-                function(err) {
+                function (err) {
                     if (err) reject(err);
                     resolve({ ...user, id: this.lastID });
                 }
@@ -69,7 +69,7 @@ async function getUserByEmail(email) {
 
 async function clearTestDb() {
     const tables = ['users', 'availability', 'assignments', 'user_preferences'];
-    
+
     // Use a single transaction for faster cleanup
     await new Promise((resolve, reject) => {
         testDb.run('BEGIN TRANSACTION', (err) => {
@@ -143,11 +143,11 @@ async function getAvailability(userId) {
                             const [time, period] = timeStr.split(/(?=[ap]m)/i);
                             const [hours, minutes] = time.split(':').map(Number);
                             const isPM = period.toLowerCase() === 'pm';
-                            
+
                             let totalHours = hours;
                             if (isPM && hours !== 12) totalHours += 12;
                             if (!isPM && hours === 12) totalHours = 0;
-                            
+
                             return totalHours * 60 + minutes;
                         };
 
@@ -200,6 +200,14 @@ async function getUserById(userId) {
     });
 }
 
+function normalizeViewPath(viewPath) {
+    // Remove file extension and convert Windows paths to forward slashes
+    return viewPath
+        .replace(/\.ejs$/, '')
+        .replace(/\\/g, '/')
+        .split('/views/')[1] || viewPath;
+}
+
 module.exports = {
     createTestUser,
     getUserByEmail,
@@ -207,5 +215,6 @@ module.exports = {
     createAvailability,
     getAvailability,
     getPreferences,
-    getUserById
-}; 
+    getUserById,
+    normalizeViewPath
+};
