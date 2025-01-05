@@ -105,7 +105,8 @@
     -webkit-overflow-scrolling: touch;
 }
 
-.week-header, .availability-header {
+.week-header,
+.availability-header {
     display: flex;
     justify-content: center;
     align-items: center;
@@ -113,7 +114,8 @@
     padding: 0 0.5rem;
 }
 
-.week-title, .availability-title {
+.week-title,
+.availability-title {
     font-size: clamp(1rem, 3vw, 1.25rem);
     text-align: center;
     color: var(--text-color);
@@ -538,17 +540,85 @@
 }
 
 @keyframes slideIn {
-    from { 
+    from {
         transform: translateY(100%) translateX(50%);
         opacity: 0;
     }
-    to { 
+    to {
         transform: translateY(0) translateX(0);
         opacity: 1;
     }
 }
 
 @keyframes fadeOut {
-    from { opacity: 1; }
-    to { opacity: 0; }
-} 
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+/* In public/css/dashboard.css */
+.week-navigation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 1.5rem;
+    padding: 0 0.5rem;
+}
+
+.nav-button {
+    padding: 0.5rem 1rem;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    color: var(--text-color);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    min-width: 120px;
+    text-align: center;
+}
+
+.nav-button:hover {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--text-color);
+}
+
+.prev-week {
+    margin-right: auto;
+}
+
+.next-week {
+    margin-left: auto;
+}
+
+.week-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+    .week-navigation {
+        padding: 0;
+        position: relative;
+    }
+
+    .nav-button {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.85rem;
+        min-width: 100px;
+    }
+
+    .week-title {
+        font-size: 1rem;
+    }
+}

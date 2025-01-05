@@ -26,35 +26,37 @@ module.exports = (db) => {
     }, isAuthenticated, isActive, async (req, res) => {
         try {
             if (req.isAuthenticated()) {
+                const weekOffset = parseInt(req.query.weekOffset) || 0; // Default to 0 (current week)
+
+                // Limit week offset between -4 and 1
+                const limitedOffset = Math.max(-4, Math.min(1, weekOffset));
+
                 const today = new Date();
                 const weekStart = new Date(today);
-                // If today is Sunday (0), set weekStart to the previous Monday
-                if (today.getDay() === 0) {
-                    weekStart.setDate(today.getDate() - 6);
-                } else {
-                    // Otherwise set to Monday of current week
-                    weekStart.setDate(today.getDate() - (weekStart.getDay() - 1));
-                }
+                weekStart.setDate(today.getDate() - (weekStart.getDay() - 1) + (limitedOffset * 7));
+
                 const weekEnd = new Date(weekStart);
                 weekEnd.setDate(weekStart.getDate() + 6);
-                weekEnd.setHours(23, 59, 59, 999);  // Set to end of day
 
                 // Get assignments for the week
                 const assignments = await new Promise((resolve, reject) => {
                     db.all(`
                         SELECT a.*, u.first_name || ' ' || u.last_name as user_name
                         FROM assignments a
-                        JOIN users u ON a.user_id = u.id
-                        WHERE a.day_date BETWEEN ? AND ?
-                    `, [
-                        weekStart.toISOString().split('T')[0],
-                        weekEnd.toISOString().split('T')[0]
-                    ], (err, rows) => {
-                        if (err) reject(err);
-                        resolve(rows || []);
-                    });
+                        LEFT JOIN users u ON a.user_id = u.id
+                        WHERE day_date BETWEEN ? AND ?
+                    `,
+                        [
+                            weekStart.toISOString().split('T')[0],
+                            weekEnd.toISOString().split('T')[0]
+                        ],
+                        (err, rows) => {
+                            if (err) reject(err);
+                            resolve(rows || []);
+                        });
                 });
 
+                // Get user availability
                 const userAvailability = await new Promise((resolve, reject) => {
                     db.all(
                         'SELECT * FROM availability WHERE user_id = ?',
@@ -66,12 +68,47 @@ module.exports = (db) => {
                     );
                 });
 
+                // Get user availability for next week (always)
+                const nextWeekStart = new Date(today);
+                nextWeekStart.setDate(today.getDate() + (8 - today.getDay())); // Move to next Monday
+                const nextWeekEnd = new Date(nextWeekStart);
+                nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+
+                const nextWeekAvailability = await new Promise((resolve, reject) => {
+                    db.all(
+                        'SELECT * FROM availability WHERE user_id = ? AND day_date BETWEEN ? AND ?',
+                        [
+                            req.user.id,
+                            nextWeekStart.toISOString().split('T')[0],
+                            nextWeekEnd.toISOString().split('T')[0]
+                        ],
+                        (err, rows) => {
+                            if (err) reject(err);
+                            resolve(rows || []);
+                        }
+                    );
+                });
+
+                // Generate week title based on offset
+                let weekTitle;
+                switch (limitedOffset) {
+                    case -4: weekTitle = '4 Weeks Ago'; break;
+                    case -3: weekTitle = '3 Weeks Ago'; break;
+                    case -2: weekTitle = '2 Weeks Ago'; break;
+                    case -1: weekTitle = 'Last Week'; break;
+                    case 0: weekTitle = 'This Week'; break;
+                    case 1: weekTitle = 'Next Week'; break;
+                    default: weekTitle = 'This Week';
+                }
+
                 res.render('dashboard', {
                     user: req.user,
                     weekStart,
-                    weekTitle: 'This Week',
+                    weekTitle,
+                    weekOffset: limitedOffset,
                     assignments,
-                    userAvailability
+                    userAvailability,
+                    nextWeekAvailability
                 });
             } else {
                 res.redirect('/login');

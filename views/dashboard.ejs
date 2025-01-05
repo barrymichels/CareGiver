@@ -14,7 +14,21 @@
     <main class="dashboard-content">
         <div class="week-view">
             <div class="week-header">
-                <h2 class="week-title"><%= weekTitle %></h2>
+                <div class="week-navigation">
+                    <% if (weekOffset > -4) { %>
+                        <a href="/?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
+                            &larr; Previous Week
+                        </a>
+                    <% } %>
+                    
+                    <h2 class="week-title"><%= weekTitle %></h2>
+                    
+                    <% if (weekOffset < 1) { %>
+                        <a href="/?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
+                            Next Week &rarr;
+                        </a>
+                    <% } %>
+                </div>
             </div>
             
             <div class="schedule-grid">
@@ -85,4 +99,4 @@
     <script src="/js/header.js"></script>
     <script src="/js/availability.js"></script>
 </body>
-</html> 
+</html>
