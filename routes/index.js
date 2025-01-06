@@ -34,9 +34,13 @@ module.exports = (db) => {
                 const today = new Date();
                 const weekStart = new Date(today);
                 weekStart.setDate(today.getDate() - (weekStart.getDay() - 1) + (limitedOffset * 7));
+                // Reset time to midnight
+                weekStart.setHours(0, 0, 0, 0);
 
                 const weekEnd = new Date(weekStart);
                 weekEnd.setDate(weekStart.getDate() + 6);
+                // Set weekEnd to end of day
+                weekEnd.setHours(23, 59, 59, 999);
 
                 // Get assignments for the week
                 const assignments = await new Promise((resolve, reject) => {
