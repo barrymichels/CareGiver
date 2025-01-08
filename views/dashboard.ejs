@@ -57,20 +57,7 @@
                     { time: '9:30pm', label: 'Night' }
                 ];
 
-                // Generate dates for the week
-                const today = new Date();
-                const currentDay = today.getDay();
-                const weekStart = new Date(today);
-                weekStart.setDate(today.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
-
-                // Format week start date for title
-                const weekStartFormatted = weekStart.toLocaleDateString('en-US', { 
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric'
-                });
-                weekTitle = `Week of ${weekStartFormatted}`;
-
+                // Generate dates for the week using weekStart
                 const weekDates = days.map((day, index) => {
                     const date = new Date(weekStart);
                     date.setDate(weekStart.getDate() + index);

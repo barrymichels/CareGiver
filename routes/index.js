@@ -137,7 +137,13 @@ module.exports = (db) => {
 
                 const today = new Date();
                 const weekStart = new Date(today);
-                weekStart.setDate(today.getDate() - (weekStart.getDay() - 1) + (limitedOffset * 7));
+                
+                // First, move to the start of the current week (Monday)
+                weekStart.setDate(today.getDate() - (weekStart.getDay() - 1));
+                
+                // Then, adjust by the week offset
+                weekStart.setDate(weekStart.getDate() + (limitedOffset * 7));
+                
                 // Reset time to midnight UTC
                 weekStart.setHours(0, 0, 0, 0);
 
@@ -149,9 +155,9 @@ module.exports = (db) => {
                 // Get assignments for the week
                 const assignments = await new Promise((resolve, reject) => {
                     db.all(`
-                        SELECT a.*, u.first_name || ' ' || u.last_name as user_name
+                        SELECT a.*, u.first_name || ' ' || u.last_name as user_name, u.id as user_id
                         FROM assignments a
-                        LEFT JOIN users u ON a.user_id = u.id
+                        JOIN users u ON a.user_id = u.id
                         WHERE day_date BETWEEN ? AND ?
                     `,
                         [
@@ -167,28 +173,11 @@ module.exports = (db) => {
                 // Get user availability
                 const userAvailability = await new Promise((resolve, reject) => {
                     db.all(
-                        'SELECT * FROM availability WHERE user_id = ?',
-                        [req.user.id],
-                        (err, rows) => {
-                            if (err) reject(err);
-                            resolve(rows || []);
-                        }
-                    );
-                });
-
-                // Get user availability for next week (always)
-                const nextWeekStart = new Date(today);
-                nextWeekStart.setDate(today.getDate() + (8 - today.getDay())); // Move to next Monday
-                const nextWeekEnd = new Date(nextWeekStart);
-                nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
-
-                const nextWeekAvailability = await new Promise((resolve, reject) => {
-                    db.all(
                         'SELECT * FROM availability WHERE user_id = ? AND day_date BETWEEN ? AND ?',
                         [
                             req.user.id,
-                            nextWeekStart.toISOString().split('T')[0],
-                            nextWeekEnd.toISOString().split('T')[0]
+                            weekStart.toISOString().split('T')[0],
+                            weekEnd.toISOString().split('T')[0]
                         ],
                         (err, rows) => {
                             if (err) reject(err);
@@ -215,7 +204,8 @@ module.exports = (db) => {
                     weekOffset: limitedOffset,
                     assignments,
                     userAvailability,
-                    nextWeekAvailability
+                    nextWeekAvailability: [],  // No longer needed since we're showing availability for the current view
+                    weekStart // Pass the weekStart date to the template
                 });
             } else {
                 res.redirect('/login');
