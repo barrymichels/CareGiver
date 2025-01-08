@@ -233,3 +233,27 @@ input:focus + .password-requirements {
     background-color: var(--card-bg);
     border-color: var(--primary-color);
 }
+
+.form-links {
+    text-align: center;
+    margin-top: 1rem;
+}
+
+.form-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s ease;
+}
+
+.form-links a:hover {
+    color: var(--primary-color);
+}
+
+.form-description {
+    text-align: center;
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
