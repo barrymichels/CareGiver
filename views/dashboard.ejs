@@ -48,6 +48,22 @@
                     { time: '9:30pm', label: 'Night' }
                 ];
 
+                // Helper function to parse time in user's timezone
+                function parseTimeInTimezone(dateStr, timeStr) {
+                    const [hours, minutes, period] = timeStr.match(/(\d+):(\d+)(am|pm)/).slice(1);
+                    const date = new Date(dateStr);
+                    date.setHours(
+                        (period === 'pm' && hours !== '12' ? parseInt(hours) + 12 : parseInt(hours)),
+                        parseInt(minutes),
+                        0,
+                        0
+                    );
+                    return date;
+                }
+
+                // Get current time in user's timezone
+                const currentDate = new Date();
+
                 // Generate dates for the week
                 const weekDates = days.map((day, index) => {
                     const date = new Date(weekStart);
@@ -71,13 +87,7 @@
                         </div>
                         <div class="day-content">
                             <% timeSlots.forEach(slot => { 
-                                const currentDate = new Date();
-                                const slotDate = new Date(day.date);
-                                const [hours, minutes, period] = slot.time.match(/(\d+):(\d+)(am|pm)/).slice(1);
-                                slotDate.setHours(
-                                    (period === 'pm' && hours !== '12' ? parseInt(hours) + 12 : parseInt(hours)),
-                                    parseInt(minutes)
-                                );
+                                const slotDate = parseTimeInTimezone(day.date, slot.time);
                                 
                                 // Determine if this is the next upcoming slot across all days
                                 const isNextSlot = currentDate < slotDate && 
@@ -85,13 +95,7 @@
                                         timeSlots.some(checkSlot => {
                                             if (checkDay === day && checkSlot === slot) return false;
                                             
-                                            const checkDate = new Date(checkDay.date);
-                                            const [h, m, p] = checkSlot.time.match(/(\d+):(\d+)(am|pm)/).slice(1);
-                                            checkDate.setHours(
-                                                (p === 'pm' && h !== '12' ? parseInt(h) + 12 : parseInt(h)),
-                                                parseInt(m)
-                                            );
-                                            
+                                            const checkDate = parseTimeInTimezone(checkDay.date, checkSlot.time);
                                             return currentDate < checkDate && checkDate < slotDate;
                                         })
                                     );
