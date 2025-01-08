@@ -28,11 +28,13 @@
                 <div class="form-links">
                     <a href="/forgot-password" class="forgot-password-link">Forgot your password?</a>
                 </div>
+                <% if (process.env.ENABLE_AUTHENTIK_LOGIN === 'true') { %>
                 <div class="oauth-login">
                     <a href="/auth/login" class="submit-btn">
                         Login with Authentik
                     </a>
                 </div>
+                <% } %>
             </form>
 
             <form id="register-form" class="form" action="/register" method="POST">

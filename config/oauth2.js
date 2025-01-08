@@ -2,8 +2,8 @@ const OAuth2Strategy = require('passport-oauth2').Strategy;
 const axios = require('axios');
 
 module.exports = function (passport, db) {
-    // Skip OAuth2 setup in test environment
-    if (process.env.NODE_ENV === 'test') {
+    // Skip OAuth2 setup in test environment or if Authentik login is disabled
+    if (process.env.NODE_ENV === 'test' || process.env.ENABLE_AUTHENTIK_LOGIN !== 'true') {
         return;
     }
 
