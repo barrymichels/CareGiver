@@ -64,8 +64,10 @@
                     minutes: now.getMinutes()
                 };
 
-                // Convert weekStart to local timezone
+                // Convert weekStart to local timezone by adding the timezone offset
                 const localWeekStart = new Date(weekStart);
+                const tzOffset = now.getTimezoneOffset();
+                localWeekStart.setMinutes(localWeekStart.getMinutes() - tzOffset);
 
                 // Generate dates for the week
                 const weekDates = days.map((day, index) => {
@@ -94,7 +96,9 @@
                         if (day.date < now.setHours(0,0,0,0)) continue;
                         
                         // If it's today, only show future slots
-                        if (day.date.getDate() === now.getDate()) {
+                        if (day.date.getDate() === now.getDate() && 
+                            day.date.getMonth() === now.getMonth() && 
+                            day.date.getFullYear() === now.getFullYear()) {
                             foundToday = true;
                             for (const slot of timeSlots) {
                                 const slotTime = parseTimeStr(slot.time);
