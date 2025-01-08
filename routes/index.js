@@ -94,16 +94,14 @@ module.exports = (db) => {
                 });
 
                 // Generate week title based on offset
-                let weekTitle;
-                switch (limitedOffset) {
-                    case -4: weekTitle = '4 Weeks Ago'; break;
-                    case -3: weekTitle = '3 Weeks Ago'; break;
-                    case -2: weekTitle = '2 Weeks Ago'; break;
-                    case -1: weekTitle = 'Last Week'; break;
-                    case 0: weekTitle = 'This Week'; break;
-                    case 1: weekTitle = 'Next Week'; break;
-                    default: weekTitle = 'This Week';
-                }
+                const weekTitleDate = new Date(weekStart);
+                weekTitleDate.setHours(0, 0, 0, 0);
+                const formattedDate = weekTitleDate.toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+                let weekTitle = `Week of ${formattedDate}`;
 
                 res.render('dashboard', {
                     user: req.user,

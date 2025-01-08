@@ -21,20 +21,29 @@
     <main class="dashboard-content">
         <div class="week-view">
             <div class="week-header">
-                <div class="week-navigation">
-                    <% if (weekOffset > -4) { %>
-                        <a href="/?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
-                            &larr; Previous Week
-                        </a>
+                <div class="week-controls">
+                    <% if (weekOffset === 0) { %>
+                        <button id="exportCalendar" class="action-button" title="Export this week's events to your calendar">
+                            <span class="calendar-icon">📅</span>
+                            Add to calendar
+                        </button>
                     <% } %>
                     
                     <h2 class="week-title"><%= weekTitle %></h2>
                     
-                    <% if (weekOffset < 1) { %>
-                        <a href="/?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
-                            Next Week &rarr;
-                        </a>
-                    <% } %>
+                    <div class="week-navigation">
+                        <% if (weekOffset > -4) { %>
+                            <a href="/?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
+                                &larr; Previous
+                            </a>
+                        <% } %>
+                        
+                        <% if (weekOffset < 1) { %>
+                            <a href="/?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
+                                Next &rarr;
+                            </a>
+                        <% } %>
+                    </div>
                 </div>
             </div>
             
@@ -53,6 +62,14 @@
                 const currentDay = today.getDay();
                 const weekStart = new Date(today);
                 weekStart.setDate(today.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
+
+                // Format week start date for title
+                const weekStartFormatted = weekStart.toLocaleDateString('en-US', { 
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+                weekTitle = `Week of ${weekStartFormatted}`;
 
                 const weekDates = days.map((day, index) => {
                     const date = new Date(weekStart);
@@ -86,7 +103,12 @@
                                             a.day_date === day.date.toLocaleDateString('en-CA') && 
                                             a.time_slot === slot.time
                                         ); %>
-                                        <div class="assignment <%= assignment ? 'assigned' : 'open' %>">
+                                        <div class="assignment <%= assignment ? 'assigned' : 'open' %>"
+                                             <% if (assignment) { %>
+                                                data-scheduled="true"
+                                                data-time="<%= slot.time %>"
+                                                data-description="<%= assignment.user_name %>'s Shift"
+                                             <% } %>>
                                             <%= assignment ? assignment.user_name : 'Open' %>
                                         </div>
                                     </div>

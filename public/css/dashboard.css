@@ -569,14 +569,32 @@
 }
 
 /* In public/css/dashboard.css */
-.week-navigation {
-    display: grid;
-    grid-template-columns: minmax(100px, 1fr) auto minmax(100px, 1fr);
+.week-header {
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.week-controls {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 1rem;
     width: 100%;
-    margin-bottom: 1.5rem;
-    padding: 0 0.5rem;
+}
+
+.week-navigation {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.week-title {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+    margin: 0;
+    text-align: center;
+    flex: 1;
+    padding: 0 1rem;
 }
 
 .nav-button {
@@ -588,44 +606,65 @@
     text-decoration: none;
     font-size: 0.9rem;
     transition: all 0.2s ease;
-    min-width: 120px;
     text-align: center;
+    min-width: 90px;
 }
 
-.prev-week {
-    justify-self: start;
+.nav-button:hover {
+    background-color: var(--card-bg);
+    transform: translateY(-1px);
 }
 
-.next-week {
-    justify-self: end;
-}
-
-.week-title,
-.section-title {
-    grid-column: 2;
-    text-align: center;
-    font-size: 1.1rem;
-    font-weight: 500;
+#exportCalendar {
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
     color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     white-space: nowrap;
+    min-width: fit-content;
+}
+
+#exportCalendar .calendar-icon {
+    font-size: 1rem;
+}
+
+#exportCalendar:hover {
+    background-color: var(--card-bg);
+    transform: translateY(-1px);
 }
 
 /* Mobile responsive styles */
 @media (max-width: 768px) {
+    .week-controls {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+
     .week-navigation {
-        gap: 0.5rem;
+        justify-content: center;
+    }
+
+    .week-title {
+        order: -1;
+        text-align: center;
         padding: 0;
     }
 
-    .nav-button {
-        padding: 0.4rem 0.8rem;
-        font-size: 0.85rem;
-        min-width: auto;
+    #exportCalendar {
+        align-self: center;
     }
 
-    .week-title,
-    .section-title {
-        font-size: 1rem;
+    .nav-button {
+        flex: 1;
+        min-width: auto;
     }
 }
 
@@ -636,4 +675,21 @@
 
 .time-slot.current-slot .time-slot-header {
     background-color: rgba(100, 108, 255, 0.1);
+}
+
+.week-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.week-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 0.5rem;
+    margin-bottom: 1.5rem;
+    border-top: 1px solid var(--input-border);
+    padding-top: 1rem;
 }

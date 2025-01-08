@@ -111,6 +111,119 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    // Calendar Export Functionality
+    const exportButton = document.getElementById('exportCalendar');
+    if (exportButton) {
+        exportButton.addEventListener('click', () => {
+            exportCalendarEvents();
+        });
+    }
+
+    function exportCalendarEvents() {
+        // Get all events from the schedule grid
+        const events = [];
+        const weekTitle = document.querySelector('.week-title').textContent;
+        
+        // Parse the week start date from the week title
+        const weekDateMatch = weekTitle.match(/Week of (.+)/);
+        if (!weekDateMatch) return;
+        
+        const weekStartStr = weekDateMatch[1];
+        const weekStart = new Date(weekStartStr);
+
+        // Get all scheduled slots
+        const scheduledSlots = document.querySelectorAll('.assignment[data-scheduled="true"]');
+
+        scheduledSlots.forEach((slot, index) => {
+            const dayColumn = slot.closest('.day-column');
+            const dayIndex = Array.from(document.querySelectorAll('.day-column')).indexOf(dayColumn);
+            const timeStr = slot.dataset.time;
+            const description = slot.dataset.description || 'Scheduled Shift';
+
+            // Create event date by adding days to week start
+            const eventDate = new Date(weekStart);
+            eventDate.setDate(eventDate.getDate() + dayIndex);
+
+            // Parse the time
+            const timeMatch = timeStr.match(/(\d+):(\d+)([ap]m)/i);
+            if (!timeMatch) return;
+
+            const [hours, minutes, period] = timeMatch.slice(1);
+            let hour = parseInt(hours);
+            
+            // Convert to 24-hour format
+            if (period.toLowerCase() === 'pm' && hour !== 12) {
+                hour += 12;
+            } else if (period.toLowerCase() === 'am' && hour === 12) {
+                hour = 0;
+            }
+            
+            eventDate.setHours(hour, parseInt(minutes));
+
+            // Create end time (15 minutes later)
+            const endDate = new Date(eventDate);
+            endDate.setMinutes(endDate.getMinutes() + 15);
+
+            events.push({
+                start: eventDate,
+                end: endDate,
+                description: description
+            });
+        });
+
+        if (events.length === 0) {
+            showToast('No scheduled events found for this week', 'error');
+            return;
+        }
+
+        // Generate ICS content
+        let icsContent = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//CareGiver//EN',
+            'CALSCALE:GREGORIAN'
+        ];
+
+        events.forEach(event => {
+            icsContent = icsContent.concat([
+                'BEGIN:VEVENT',
+                `DTSTART:${formatDateToICS(event.start)}`,
+                `DTEND:${formatDateToICS(event.end)}`,
+                `SUMMARY:${event.description}`,
+                'END:VEVENT'
+            ]);
+        });
+
+        icsContent.push('END:VCALENDAR');
+
+        // Download the file
+        const blob = new Blob([icsContent.join('\r\n')], { type: 'text/calendar' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `schedule-${weekStartStr.replace(/\s/g, '-')}.ics`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        showToast('Calendar events exported successfully');
+    }
+
+    function formatDateToICS(date) {
+        // Pad a number with leading zeros
+        const pad = (num) => (num < 10 ? '0' : '') + num;
+        
+        // Format in local time
+        const year = date.getFullYear();
+        const month = pad(date.getMonth() + 1);
+        const day = pad(date.getDate());
+        const hours = pad(date.getHours());
+        const minutes = pad(date.getMinutes());
+        
+        return `${year}${month}${day}T${hours}${minutes}00`;
+    }
 });
 
 function showToast(message, type = 'success') {
