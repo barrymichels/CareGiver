@@ -31,9 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveButton = document.getElementById('saveAvailability');
     const unsavedChangesModal = document.getElementById('unsavedChangesModal');
 
-    if (saveButton) {
+    if (saveButton && !saveButton.dataset.handlerAttached) {
         // Disable save button initially
         saveButton.disabled = true;
+        saveButton.dataset.handlerAttached = 'true';
 
         // Track changes to any checkbox
         document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {

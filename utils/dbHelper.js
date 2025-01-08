@@ -119,17 +119,26 @@ class DatabaseHelper {
     async withTransaction(callback) {
         let retries = 0;
         const maxRetries = 3;
+        let transactionStarted = false;
         
         while (retries < maxRetries) {
             try {
                 await this.beginTransaction();
+                transactionStarted = true;
                 const result = await callback();
                 await this.commit();
                 return result;
             } catch (error) {
-                await this.rollback().catch(rollbackError => {
-                    console.error('Rollback failed:', rollbackError);
-                });
+                if (transactionStarted) {
+                    try {
+                        await this.rollback();
+                    } catch (rollbackError) {
+                        // Only log rollback errors if there was actually a transaction to roll back
+                        if (!rollbackError.message.includes('no transaction is active')) {
+                            console.error('Rollback failed:', rollbackError);
+                        }
+                    }
+                }
                 
                 if (error.code !== 'SQLITE_BUSY' && error.code !== 'SQLITE_LOCKED' || retries === maxRetries - 1) {
                     throw error;

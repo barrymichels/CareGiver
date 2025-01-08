@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= getPageTitle('Manage Availability') %></title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/header.css">
+    <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+    <%- include('../partials/header', { user }) %>
+    
+    <main class="admin-content">
+        <div class="availability-container">
+            <div class="availability-header">
+                <a href="/admin/users" class="back-button">← Back to Users</a>
+                <h1>Managing Availability for <%= targetUser.first_name %> <%= targetUser.last_name %></h1>
+            </div>
+
+            <div class="availability-wrapper">
+                <%- include('../partials/availability-manager', { 
+                    days,
+                    timeSlots,
+                    userAvailability,
+                    customTitle: `${targetUser.first_name}'s Availability for Next Week`
+                }) %>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Override the endpoint for saving availability
+        window.saveAvailabilityEndpoint = '/admin/users/<%= targetUser.id %>/availability';
+    </script>
+    <script src="/js/header.js"></script>
+    <script src="/js/availability.js"></script>
+</body>
+</html> 

@@ -8,8 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let isDirty = false;
 
         // Disable save button initially
-        if (saveButton) {
+        if (saveButton && !saveButton.dataset.handlerAttached) {
             saveButton.disabled = true;
+            saveButton.dataset.handlerAttached = 'true';
 
             saveButton.addEventListener('click', async () => {
                 const availability = [];
@@ -22,7 +23,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 try {
-                    const response = await fetch('/availability/update', {
+                    // Use the endpoint defined in the page, or fall back to the default
+                    const endpoint = window.saveAvailabilityEndpoint || '/availability/update';
+                    const response = await fetch(endpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -35,7 +38,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         saveButton.disabled = true;
                         showToast('Availability saved successfully');
                     } else {
-                        showToast('Failed to save availability', 'error');
+                        const data = await response.json();
+                        showToast(data.error || 'Failed to save availability', 'error');
                     }
                 } catch (error) {
                     console.error('Error saving availability:', error);
@@ -59,23 +63,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Handle navigation within the app
-        document.querySelectorAll('a').forEach(link => {
-            link.addEventListener('click', (e) => {
-                if (isDirty) {
-                    e.preventDefault();
-                    showUnsavedChangesModal(e.currentTarget.href);
-                }
-            });
-        });
-
-        // Handle browser back/forward buttons and direct URL changes
-        window.addEventListener('popstate', (e) => {
+        // Show warning if user tries to leave with unsaved changes
+        window.addEventListener('beforeunload', (e) => {
             if (isDirty) {
                 e.preventDefault();
-                showUnsavedChangesModal(window.location.href);
-                // Prevent the default navigation
-                history.pushState(null, '', window.location.href);
+                e.returnValue = '';
             }
         });
     }

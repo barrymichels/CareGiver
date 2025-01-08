@@ -20,6 +20,10 @@ It will grow and change as we use it and see how the app can be improved.
 - Manage user accounts and permissions
 - Monitor schedule coverage and conflicts
 - Batch assign shifts with automatic validation
+- Create and manage virtual users for non-tech-savvy staff
+  - Add virtual users with just a name
+  - Manage their availability directly
+  - Convert virtual users to regular users when needed
 
 ## Quick Start
 

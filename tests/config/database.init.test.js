@@ -48,8 +48,8 @@ describe('Database Initialization', () => {
         expect(schema).toContain('id integer primary key autoincrement');
         expect(schema).toContain('first_name text not null');
         expect(schema).toContain('last_name text not null');
-        expect(schema).toContain('email text unique not null');
-        expect(schema).toContain('password text not null');
+        expect(schema).toContain('email text unique');
+        expect(schema).toContain('password text');
         expect(schema).toContain('is_admin boolean not null default 0');
         expect(schema).toContain('is_active boolean not null default 0');
         expect(schema).toContain('created_at datetime default current_timestamp');
