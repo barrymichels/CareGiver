@@ -255,7 +255,7 @@ module.exports = function (db) {
 
                 try {
                     const transporter = createTransporter();
-                    const resetUrl = `${req.protocol}://${req.get('host')}/reset-password/${resetToken}`;
+                    const resetUrl = `${process.env.APP_URL}/reset-password/${resetToken}`;
 
                     await transporter.sendMail({
                         from: process.env.SMTP_FROM,
@@ -289,7 +289,7 @@ module.exports = function (db) {
     router.get('/reset-password/:token', async (req, res) => {
         try {
             const { token } = req.params;
-            
+
             // Check if token exists and is not expired
             const user = await new Promise((resolve, reject) => {
                 db.get(
