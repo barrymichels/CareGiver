@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     form.reset();
                 }
             } else {
-                showMessage(form, responseData.error, 'error');
+                showMessage(form, responseData.error || responseData.message, 'error');
             }
         } catch (error) {
             showMessage(form, 'An error occurred. Please try again.', 'error');

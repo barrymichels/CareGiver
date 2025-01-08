@@ -182,9 +182,20 @@ function highlightCurrentTimeslot() {
     const slotElements = document.querySelectorAll('.time-slot');
     slotElements.forEach(slot => {
         const slotTime = slot.querySelector('.time').textContent;
-        const [slotHour, slotMinute] = slotTime.split(':');
+        let [time, period] = slotTime.split(/([ap]m)/i);
+        let [slotHour, slotMinute] = time.split(':');
         
-        if (parseInt(slotHour) === currentSlot.hour && parseInt(slotMinute) === currentSlot.minute) {
+        // Convert to 24-hour format if needed
+        slotHour = parseInt(slotHour);
+        slotMinute = parseInt(slotMinute);
+        if (period && period.toLowerCase() === 'pm' && slotHour !== 12) {
+            slotHour += 12;
+        }
+        if (period && period.toLowerCase() === 'am' && slotHour === 12) {
+            slotHour = 0;
+        }
+        
+        if (slotHour === currentSlot.hour && slotMinute === currentSlot.minute) {
             const slotDay = slot.closest('.day-column');
             if (slotDay && slotDay.querySelector('.day-name').textContent.toLowerCase() === days[currentDay]) {
                 slot.classList.add('current-slot');
