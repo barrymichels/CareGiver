@@ -193,6 +193,15 @@
     padding: 0.5rem;
 }
 
+.time-slot.next-slot {
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 2px 8px rgba(100, 108, 255, 0.2);
+}
+
+.time-slot.next-slot .time-slot-header {
+    background-color: rgba(100, 108, 255, 0.1);
+}
+
 /* Assignment styles */
 .assignment {
     font-size: 0.9rem;

@@ -70,8 +70,33 @@
                             <div class="day-date"><%= day.formatted %></div>
                         </div>
                         <div class="day-content">
-                            <% timeSlots.forEach(slot => { %>
-                                <div class="time-slot">
+                            <% timeSlots.forEach(slot => { 
+                                const currentDate = new Date();
+                                const slotDate = new Date(day.date);
+                                const [hours, minutes, period] = slot.time.match(/(\d+):(\d+)(am|pm)/).slice(1);
+                                slotDate.setHours(
+                                    (period === 'pm' && hours !== '12' ? parseInt(hours) + 12 : parseInt(hours)),
+                                    parseInt(minutes)
+                                );
+                                
+                                // Determine if this is the next upcoming slot across all days
+                                const isNextSlot = currentDate < slotDate && 
+                                    !weekDates.some(checkDay => 
+                                        timeSlots.some(checkSlot => {
+                                            if (checkDay === day && checkSlot === slot) return false;
+                                            
+                                            const checkDate = new Date(checkDay.date);
+                                            const [h, m, p] = checkSlot.time.match(/(\d+):(\d+)(am|pm)/).slice(1);
+                                            checkDate.setHours(
+                                                (p === 'pm' && h !== '12' ? parseInt(h) + 12 : parseInt(h)),
+                                                parseInt(m)
+                                            );
+                                            
+                                            return currentDate < checkDate && checkDate < slotDate;
+                                        })
+                                    );
+                            %>
+                                <div class="time-slot <%= isNextSlot ? 'next-slot' : '' %>">
                                     <div class="time-slot-header">
                                         <span class="time"><%= slot.time %></span>
                                         <span class="label"><%= slot.label %></span>
