@@ -116,30 +116,41 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportButton = document.getElementById('exportCalendar');
     if (exportButton) {
         exportButton.addEventListener('click', () => {
-            exportCalendarEvents();
+            window.location.href = '/export-calendar';
         });
     }
 
     function exportCalendarEvents() {
         // Get all events from the schedule grid
         const events = [];
-        const weekTitle = document.querySelector('.week-title').textContent;
         
-        // Parse the week start date from the week title
-        const weekDateMatch = weekTitle.match(/Week of (.+)/);
-        if (!weekDateMatch) return;
+        // Get current user's ID from the profile link
+        const profileLink = document.querySelector('a[href^="/profile/"]');
+        const currentUserId = profileLink ? profileLink.href.split('/').pop() : null;
         
-        const weekStartStr = weekDateMatch[1];
-        const weekStart = new Date(weekStartStr);
+        if (!currentUserId) {
+            showToast('Could not determine current user', 'error');
+            return;
+        }
+        
+        // Calculate week start date based on current date
+        const today = new Date();
+        const weekStart = new Date(today);
+        const currentDay = today.getDay();
+        weekStart.setDate(today.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
+        weekStart.setHours(0, 0, 0, 0);
 
         // Get all scheduled slots
         const scheduledSlots = document.querySelectorAll('.assignment[data-scheduled="true"]');
 
         scheduledSlots.forEach((slot, index) => {
+            // Only include shifts assigned to the current user
+            if (slot.dataset.userId !== currentUserId) return;
+
             const dayColumn = slot.closest('.day-column');
             const dayIndex = Array.from(document.querySelectorAll('.day-column')).indexOf(dayColumn);
             const timeStr = slot.dataset.time;
-            const description = slot.dataset.description || 'Scheduled Shift';
+            const description = 'Your Shift';  // Simplified description since we know it's the user's shift
 
             // Create event date by adding days to week start
             const eventDate = new Date(weekStart);
@@ -202,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `schedule-${weekStartStr.replace(/\s/g, '-')}.ics`;
+        a.download = `schedule-${weekStart.toISOString().split('T')[0].replace(/-/g, '-')}.ics`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -265,6 +276,10 @@ style.textContent = `
 document.head.appendChild(style);
 
 function highlightCurrentTimeslot() {
+    // Only highlight if we're viewing the current week
+    const weekTitle = document.querySelector('.week-title').textContent;
+    if (weekTitle !== 'This Week') return;
+
     const now = new Date();
     let currentDay = now.getDay();
     const currentHour = now.getHours();
@@ -292,6 +307,11 @@ function highlightCurrentTimeslot() {
         currentSlot = timeSlots[0]; // Default to first slot of next day
     }
 
+    // Remove any existing highlights
+    document.querySelectorAll('.time-slot').forEach(slot => {
+        slot.classList.remove('current-slot');
+    });
+
     const slotElements = document.querySelectorAll('.time-slot');
     slotElements.forEach(slot => {
         const slotTime = slot.querySelector('.time').textContent;
@@ -313,8 +333,6 @@ function highlightCurrentTimeslot() {
             if (slotDay && slotDay.querySelector('.day-name').textContent.toLowerCase() === days[currentDay]) {
                 slot.classList.add('current-slot');
             }
-        } else {
-            slot.classList.remove('current-slot');
         }
     });
 }

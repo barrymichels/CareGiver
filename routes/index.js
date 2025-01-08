@@ -11,7 +11,111 @@ function checkSetupRequired(db) {
     });
 }
 
+function formatDateToICS(date) {
+    // Pad a number with leading zeros
+    const pad = (num) => (num < 10 ? '0' : '') + num;
+    
+    // Format in local time
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    
+    return `${year}${month}${day}T${hours}${minutes}00`;
+}
+
 module.exports = (db) => {
+    // Export calendar endpoint
+    router.get('/export-calendar', isAuthenticated, isActive, async (req, res) => {
+        try {
+            // Calculate week dates
+            const today = new Date();
+            const weekStart = new Date(today);
+            const currentDay = today.getDay();
+            weekStart.setDate(today.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
+            weekStart.setHours(0, 0, 0, 0);
+
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+            weekEnd.setHours(23, 59, 59, 999);
+
+            // Get user's assignments for the week
+            const assignments = await new Promise((resolve, reject) => {
+                db.all(`
+                    SELECT a.*, u.first_name || ' ' || u.last_name as user_name
+                    FROM assignments a
+                    LEFT JOIN users u ON a.user_id = u.id
+                    WHERE a.user_id = ? AND day_date BETWEEN ? AND ?
+                `,
+                    [
+                        req.user.id,
+                        weekStart.toISOString().split('T')[0],
+                        weekEnd.toISOString().split('T')[0]
+                    ],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        resolve(rows || []);
+                    });
+            });
+
+            if (assignments.length === 0) {
+                return res.status(404).json({ error: 'No shifts found for this week' });
+            }
+
+            // Generate ICS content
+            let icsContent = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//CareGiver//EN',
+                'CALSCALE:GREGORIAN'
+            ];
+
+            assignments.forEach(assignment => {
+                // Parse the time
+                const timeMatch = assignment.time_slot.match(/(\d+):(\d+)([ap]m)/i);
+                if (!timeMatch) return;
+
+                const [hours, minutes, period] = timeMatch.slice(1);
+                let hour = parseInt(hours);
+                
+                // Convert to 24-hour format
+                if (period.toLowerCase() === 'pm' && hour !== 12) {
+                    hour += 12;
+                } else if (period.toLowerCase() === 'am' && hour === 12) {
+                    hour = 0;
+                }
+
+                // Create start date
+                const startDate = new Date(assignment.day_date);
+                startDate.setHours(hour, parseInt(minutes), 0, 0);
+
+                // Create end date (15 minutes later)
+                const endDate = new Date(startDate);
+                endDate.setMinutes(endDate.getMinutes() + 15);
+
+                icsContent = icsContent.concat([
+                    'BEGIN:VEVENT',
+                    `DTSTART:${formatDateToICS(startDate)}`,
+                    `DTEND:${formatDateToICS(endDate)}`,
+                    `SUMMARY:Your Shift`,
+                    'END:VEVENT'
+                ]);
+            });
+
+            icsContent.push('END:VCALENDAR');
+
+            // Send the file
+            res.setHeader('Content-Type', 'text/calendar');
+            res.setHeader('Content-Disposition', `attachment; filename=schedule-${weekStart.toISOString().split('T')[0]}.ics`);
+            res.send(icsContent.join('\r\n'));
+
+        } catch (error) {
+            console.error('Error exporting calendar:', error);
+            res.status(500).json({ error: 'Failed to export calendar' });
+        }
+    });
+
     router.get('/', async (req, res, next) => {
         try {
             const needsSetup = await checkSetupRequired(db);
@@ -94,14 +198,16 @@ module.exports = (db) => {
                 });
 
                 // Generate week title based on offset
-                const weekTitleDate = new Date(weekStart);
-                weekTitleDate.setHours(0, 0, 0, 0);
-                const formattedDate = weekTitleDate.toLocaleDateString('en-US', {
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric'
-                });
-                let weekTitle = `Week of ${formattedDate}`;
+                let weekTitle;
+                switch (limitedOffset) {
+                    case -4: weekTitle = '4 Weeks Ago'; break;
+                    case -3: weekTitle = '3 Weeks Ago'; break;
+                    case -2: weekTitle = '2 Weeks Ago'; break;
+                    case -1: weekTitle = 'Last Week'; break;
+                    case 0: weekTitle = 'This Week'; break;
+                    case 1: weekTitle = 'Next Week'; break;
+                    default: weekTitle = 'This Week';
+                }
 
                 res.render('dashboard', {
                     user: req.user,

@@ -528,3 +528,81 @@
         padding: 0 0.5rem;
     }
 } 
+
+.admin-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    margin-bottom: 2rem;
+}
+
+.admin-title {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+    margin: 0;
+    text-align: center;
+    flex: 1;
+}
+
+.nav-buttons, .nav-buttons-spacer {
+    display: flex;
+    gap: 1rem;
+    width: 210px; /* Width of two buttons (90px each) plus gap (1rem/16px) */
+}
+
+.nav-buttons-spacer {
+    visibility: hidden;
+}
+
+.nav-button {
+    padding: 0.5rem 1rem;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    color: var(--text-color);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    text-align: center;
+    min-width: 90px;
+}
+
+.nav-button:hover {
+    background-color: var(--card-bg);
+    transform: translateY(-1px);
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+    .admin-controls {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .admin-title {
+        order: -1; /* Ensures title is always first */
+        text-align: center;
+        margin-bottom: 0.5rem;
+        flex: none;
+    }
+
+    .nav-buttons {
+        width: auto;
+        justify-content: center;
+    }
+
+    .nav-buttons-spacer {
+        display: none; /* Hide spacer on mobile */
+    }
+
+    .nav-button {
+        width: 120px;
+        min-width: auto;
+    }
+} 

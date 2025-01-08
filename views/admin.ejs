@@ -13,24 +13,15 @@
     
     <main class="admin-content">
         <div class="schedule-manager">
-            <div class="week-header">
-                <div class="week-navigation">
-                    <% if (weekOffset > -4) { %>
-                        <a href="/admin?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
-                            &larr; Previous Week
-                        </a>
-                    <% } %>
-                    
-                    <h2 class="section-title"><%= weekTitle %></h2>
-                    
-                    <% if (weekOffset < 4) { %>
-                        <a href="/admin?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
-                            Next Week &rarr;
-                        </a>
-                    <% } %>
+            <div class="admin-controls">
+                <div class="nav-buttons-spacer"></div>
+                <h2 class="admin-title"><%= weekTitle %></h2>
+                <div class="nav-buttons">
+                    <% if (weekOffset > -4) { %><a href="/admin?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">&larr; Previous</a><% } %>
+                    <% if (weekOffset < 1) { %><a href="/admin?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">Next &rarr;</a><% } %>
                 </div>
             </div>
-            
+
             <div class="schedule-grid">
                 <% 
                 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
