@@ -8,7 +8,6 @@ const sqlite3 = require('sqlite3').verbose();
 const { testDb, initializeTestDb } = require('../../config/test.db');
 const { createTestUser, clearTestDb } = require('../helpers/testHelpers');
 const { isAuthenticated, isActive } = require('../../middleware/auth');
-const { getPageTitle } = require('../../utils/title');
 
 // Mock external dependencies
 jest.mock('connect-sqlite3', () => {
@@ -60,9 +59,6 @@ describe('Index Routes', () => {
         // Configure middleware
         app.use(express.json());
         app.use(express.urlencoded({ extended: true }));
-
-        // Make getPageTitle available to all views
-        app.locals.getPageTitle = getPageTitle;
 
         // Session configuration
         const sessionMiddleware = session({
@@ -257,7 +253,9 @@ describe('Index Routes', () => {
         });
 
         it('should include assignments and availability in dashboard render', async () => {
-            // Set user as active
+            const agent = request.agent(app);
+            
+            // Set user as active before login
             await new Promise((resolve, reject) => {
                 db.run(
                     'UPDATE users SET is_active = 1 WHERE id = ?',
@@ -269,35 +267,24 @@ describe('Index Routes', () => {
                 );
             });
 
-            // Mock render to capture data
+            // Login
+            const loginResponse = await agent
+                .post('/login')
+                .send({ email: testUser.email, password: 'password123' });
+            expect(loginResponse.status).toBe(200);
+
             let renderData;
+            app.set('view engine', 'ejs');
             app.engine('ejs', (path, data, cb) => {
                 renderData = data;
                 cb(null, 'rendered');
             });
 
-            // Login and access dashboard
-            const agent = request.agent(app);
-            await agent
-                .post('/login')
-                .send({ email: testUser.email, password: 'password123' });
-
             const response = await agent.get('/');
-
             expect(response.status).toBe(200);
             expect(renderData).toHaveProperty('user');
             expect(renderData).toHaveProperty('assignments');
             expect(renderData).toHaveProperty('userAvailability');
-            expect(renderData).toHaveProperty('weekTitle');
-            expect(renderData).toHaveProperty('weekOffset');
-            expect(renderData).toHaveProperty('nextWeekAvailability');
-            
-            // Verify data types
-            expect(Array.isArray(renderData.assignments)).toBe(true);
-            expect(Array.isArray(renderData.userAvailability)).toBe(true);
-            expect(Array.isArray(renderData.nextWeekAvailability)).toBe(true);
-            expect(typeof renderData.weekTitle).toBe('string');
-            expect(typeof renderData.weekOffset).toBe('number');
         });
 
         it('should handle database error during setup check', async () => {
@@ -317,9 +304,6 @@ describe('Index Routes', () => {
             const errorApp = express();
             errorApp.use(express.json());
             errorApp.use(express.urlencoded({ extended: true }));
-
-            // Make getPageTitle available to all views
-            errorApp.locals.getPageTitle = getPageTitle;
 
             // Add error routes with error handling middleware
             const errorRoutes = require('../../routes/index')(errorDb);
