@@ -4,7 +4,7 @@
  * @returns {string} The complete page title
  */
 function getPageTitle(suffix) {
-    const baseTitle = process.env.APP_TITLE || "Wayne's Schedule"; // Fallback for safety
+    const baseTitle = process.env.APP_TITLE || "CareGiver"; // Fallback for safety
     return suffix ? `${suffix} - ${baseTitle}` : baseTitle;
 }
 
