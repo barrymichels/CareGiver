@@ -48,25 +48,28 @@
                     { time: '9:30pm', label: 'Night' }
                 ];
 
-                // Helper function to parse time in user's timezone
-                function parseTimeInTimezone(dateStr, timeStr) {
+                // Helper function to parse time string to hours and minutes
+                function parseTimeStr(timeStr) {
                     const [hours, minutes, period] = timeStr.match(/(\d+):(\d+)(am|pm)/).slice(1);
-                    const date = new Date(dateStr);
-                    date.setHours(
-                        (period === 'pm' && hours !== '12' ? parseInt(hours) + 12 : parseInt(hours)),
-                        parseInt(minutes),
-                        0,
-                        0
-                    );
-                    return date;
+                    return {
+                        hours: (period === 'pm' && hours !== '12' ? parseInt(hours) + 12 : parseInt(hours)),
+                        minutes: parseInt(minutes)
+                    };
                 }
 
-                // Get current time in user's timezone
-                const currentDate = new Date();
+                // Get current time in local timezone
+                const now = new Date();
+                const currentTime = {
+                    hours: now.getHours(),
+                    minutes: now.getMinutes()
+                };
+
+                // Convert weekStart to local timezone
+                const localWeekStart = new Date(weekStart);
 
                 // Generate dates for the week
                 const weekDates = days.map((day, index) => {
-                    const date = new Date(weekStart);
+                    const date = new Date(localWeekStart);
                     date.setDate(date.getDate() + index);
                     return {
                         name: day,
@@ -77,6 +80,38 @@
                         })
                     };
                 });
+
+                // Helper function to compare times
+                function isTimeAfter(time1, time2) {
+                    return (time1.hours * 60 + time1.minutes) > (time2.hours * 60 + time2.minutes);
+                }
+
+                // Helper function to find next timeslot
+                function findNextTimeslot(currentDay, currentTime) {
+                    let foundToday = false;
+                    for (const day of weekDates) {
+                        // Skip past days
+                        if (day.date < now.setHours(0,0,0,0)) continue;
+                        
+                        // If it's today, only show future slots
+                        if (day.date.getDate() === now.getDate()) {
+                            foundToday = true;
+                            for (const slot of timeSlots) {
+                                const slotTime = parseTimeStr(slot.time);
+                                if (!isTimeAfter(currentTime, slotTime)) {
+                                    return { day, slot };
+                                }
+                            }
+                        }
+                        // For future days, first slot is next
+                        else if (foundToday || day.date > now) {
+                            return { day, slot: timeSlots[0] };
+                        }
+                    }
+                    return null;
+                }
+
+                const nextSlot = findNextTimeslot(weekDates[0], currentTime);
                 %>
                 
                 <% weekDates.forEach(day => { %>
@@ -87,18 +122,9 @@
                         </div>
                         <div class="day-content">
                             <% timeSlots.forEach(slot => { 
-                                const slotDate = parseTimeInTimezone(day.date, slot.time);
-                                
-                                // Determine if this is the next upcoming slot across all days
-                                const isNextSlot = currentDate < slotDate && 
-                                    !weekDates.some(checkDay => 
-                                        timeSlots.some(checkSlot => {
-                                            if (checkDay === day && checkSlot === slot) return false;
-                                            
-                                            const checkDate = parseTimeInTimezone(checkDay.date, checkSlot.time);
-                                            return currentDate < checkDate && checkDate < slotDate;
-                                        })
-                                    );
+                                const isNextSlot = nextSlot && 
+                                    nextSlot.day.date.getDate() === day.date.getDate() && 
+                                    nextSlot.slot.time === slot.time;
                             %>
                                 <div class="time-slot <%= isNextSlot ? 'next-slot' : '' %>">
                                     <div class="time-slot-header">
