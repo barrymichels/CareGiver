@@ -153,9 +153,12 @@ document.head.appendChild(style);
 
 function highlightCurrentTimeslot() {
     const now = new Date();
-    const currentDay = now.getDay();
+    let currentDay = now.getDay();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
+
+    // Adjust currentDay to match our days array
+    currentDay = currentDay === 0 ? 6 : currentDay - 1;
 
     const timeSlots = [
         { hour: 8, minute: 0 },   // 8:00am
@@ -183,7 +186,7 @@ function highlightCurrentTimeslot() {
         
         if (parseInt(slotHour) === currentSlot.hour && parseInt(slotMinute) === currentSlot.minute) {
             const slotDay = slot.closest('.day-column');
-            if (slotDay && slotDay.querySelector('.day-name').textContent.toLowerCase() === days[currentDay].toLowerCase()) {
+            if (slotDay && slotDay.querySelector('.day-name').textContent.toLowerCase() === days[currentDay]) {
                 slot.classList.add('current-slot');
             }
         } else {
