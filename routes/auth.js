@@ -22,11 +22,6 @@ function createTransporter() {
     });
 }
 
-// Generate reset token
-function generateResetToken() {
-    return crypto.randomBytes(32).toString('hex');
-}
-
 module.exports = function (db) {
     // Check if setup is required
     function checkSetupRequired() {

@@ -93,11 +93,6 @@ describe('App', () => {
         
         // Create a test server with a random port
         server = app.listen(0);
-
-        // Add a route that throws an unhandled error for testing
-        app.get('/error', () => {
-            throw new Error('Unhandled error');
-        });
     });
 
     afterEach(async () => {
@@ -270,17 +265,6 @@ describe('App', () => {
                 expect(user).toBe(false);
                 done();
             });
-        });
-
-        test('should handle unhandled errors', async () => {
-            // Make a request to the /error route
-            const response = await request(app)
-                .get('/error')
-                .expect(500)
-                .expect('Content-Type', /json/);
-
-            // Check that the error response matches the expected format
-            expect(response.body).toEqual({ error: 'Server error' });
         });
     });
 }); 

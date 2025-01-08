@@ -121,13 +121,6 @@ app.get('/inactive', isAuthenticated, (req, res) => {
   res.render('inactive');
 });
 
-// Test route that throws an error
-app.get('/error', (req, res, next) => {
-  const error = new Error('Test error');
-  error.status = 500;
-  next(error);
-});
-
 // Error handling middleware - MUST be after all routes
 app.use((err, req, res, next) => {
   console.error('Unhandled error caught by middleware:', err);
