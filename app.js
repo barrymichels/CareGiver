@@ -10,6 +10,7 @@ const { isAuthenticated, isActive } = require('./middleware/auth');
 const SQLiteStore = require('connect-sqlite3')(session);
 const configureDatabase = require('./config/database');
 const initializeDatabase = require('./config/database.init');
+const { getPageTitle } = require('./utils/title');
 
 const app = express();
 
@@ -18,6 +19,9 @@ const db = configureDatabase(process.env.DB_PATH);
 
 // Now we can configure OAuth2 after db is initialized
 require('./config/oauth2')(passport, db);
+
+// Make getPageTitle available to all views
+app.locals.getPageTitle = getPageTitle;
 
 // Initialize database tables
 (async () => {
