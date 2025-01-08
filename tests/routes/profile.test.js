@@ -6,6 +6,7 @@ const path = require('path');
 const { testDb, initializeTestDb } = require('../../config/test.db');
 const { createTestUser, clearTestDb, getUserById } = require('../helpers/testHelpers');
 const bcrypt = require('bcrypt');
+const { getPageTitle } = require('../../utils/title');
 
 // Create express app for testing
 const app = express();
@@ -29,6 +30,9 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Make getPageTitle available to all views
+app.locals.getPageTitle = getPageTitle;
 
 // Import profile routes
 const profileRoutes = require('../../routes/profile')(testDb);

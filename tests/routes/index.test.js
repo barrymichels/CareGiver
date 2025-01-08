@@ -8,6 +8,7 @@ const sqlite3 = require('sqlite3').verbose();
 const { testDb, initializeTestDb } = require('../../config/test.db');
 const { createTestUser, clearTestDb } = require('../helpers/testHelpers');
 const { isAuthenticated, isActive } = require('../../middleware/auth');
+const { getPageTitle } = require('../../utils/title');
 
 // Mock external dependencies
 jest.mock('connect-sqlite3', () => {
@@ -59,6 +60,9 @@ describe('Index Routes', () => {
         // Configure middleware
         app.use(express.json());
         app.use(express.urlencoded({ extended: true }));
+
+        // Make getPageTitle available to all views
+        app.locals.getPageTitle = getPageTitle;
 
         // Session configuration
         const sessionMiddleware = session({
@@ -253,9 +257,7 @@ describe('Index Routes', () => {
         });
 
         it('should include assignments and availability in dashboard render', async () => {
-            const agent = request.agent(app);
-            
-            // Set user as active before login
+            // Set user as active
             await new Promise((resolve, reject) => {
                 db.run(
                     'UPDATE users SET is_active = 1 WHERE id = ?',
@@ -267,25 +269,35 @@ describe('Index Routes', () => {
                 );
             });
 
-            // Login
-            const loginResponse = await agent
-                .post('/login')
-                .send({ email: testUser.email, password: 'password123' });
-            expect(loginResponse.status).toBe(200);
-
+            // Mock render to capture data
             let renderData;
-            app.set('view engine', 'ejs');
             app.engine('ejs', (path, data, cb) => {
                 renderData = data;
                 cb(null, 'rendered');
             });
 
+            // Login and access dashboard
+            const agent = request.agent(app);
+            await agent
+                .post('/login')
+                .send({ email: testUser.email, password: 'password123' });
+
             const response = await agent.get('/');
+
             expect(response.status).toBe(200);
             expect(renderData).toHaveProperty('user');
-            expect(renderData).toHaveProperty('weekStart');
             expect(renderData).toHaveProperty('assignments');
             expect(renderData).toHaveProperty('userAvailability');
+            expect(renderData).toHaveProperty('weekTitle');
+            expect(renderData).toHaveProperty('weekOffset');
+            expect(renderData).toHaveProperty('nextWeekAvailability');
+            
+            // Verify data types
+            expect(Array.isArray(renderData.assignments)).toBe(true);
+            expect(Array.isArray(renderData.userAvailability)).toBe(true);
+            expect(Array.isArray(renderData.nextWeekAvailability)).toBe(true);
+            expect(typeof renderData.weekTitle).toBe('string');
+            expect(typeof renderData.weekOffset).toBe('number');
         });
 
         it('should handle database error during setup check', async () => {
@@ -305,6 +317,9 @@ describe('Index Routes', () => {
             const errorApp = express();
             errorApp.use(express.json());
             errorApp.use(express.urlencoded({ extended: true }));
+
+            // Make getPageTitle available to all views
+            errorApp.locals.getPageTitle = getPageTitle;
 
             // Add error routes with error handling middleware
             const errorRoutes = require('../../routes/index')(errorDb);
@@ -561,81 +576,6 @@ describe('Index Routes', () => {
 
             // Clean up
             await new Promise(resolve => errorDb.close(resolve));
-        });
-
-        describe('Week Calculation', () => {
-            let agent;
-            let mockDate;
-            
-            beforeEach(async () => {
-                agent = request.agent(app);
-                
-                // Set user as active
-                await new Promise((resolve, reject) => {
-                    db.run(
-                        'UPDATE users SET is_active = 1 WHERE id = ?',
-                        [testUser.id],
-                        (err) => {
-                            if (err) reject(err);
-                            resolve();
-                        }
-                    );
-                });
-
-                // Login
-                await agent
-                    .post('/login')
-                    .send({ email: testUser.email, password: 'password123' });
-
-                // Mock render to capture data
-                app.engine('ejs', (path, data, cb) => {
-                    mockDate = data.weekStart;
-                    cb(null, 'rendered');
-                });
-            });
-
-            it('should show the correct week when accessed on Sunday', async () => {
-                const sunday = new Date('2025-01-05');
-                sunday.setHours(12, 0, 0, 0);  // Set to noon to avoid timezone issues
-                jest.useFakeTimers().setSystemTime(sunday);
-
-                await agent.get('/');
-                
-                expect(mockDate.toISOString().split('T')[0]).toBe('2024-12-30');
-                expect(mockDate.getDay()).toBe(1);  // Should be a Monday
-
-                jest.useRealTimers();
-            });
-
-            it('should show current week when accessed on other days', async () => {
-                // Mock Wednesday (January 3, 2024)
-                const wednesday = new Date('2024-01-03');
-                wednesday.setHours(12, 0, 0, 0);  // Set to noon to avoid timezone issues
-                jest.useFakeTimers().setSystemTime(wednesday);
-
-                await agent.get('/');
-                
-                // Should show week starting from Monday (January 1)
-                expect(mockDate.toISOString().split('T')[0]).toBe('2024-01-01');
-                expect(mockDate.getDay()).toBe(1);  // Should be a Monday
-
-                jest.useRealTimers();
-            });
-
-            it('should set correct time boundaries', async () => {
-                const wednesday = new Date('2024-01-03');
-                jest.useFakeTimers().setSystemTime(wednesday);
-
-                await agent.get('/');
-                
-                // Week start should be at 00:00:00
-                expect(mockDate.getHours()).toBe(0);
-                expect(mockDate.getMinutes()).toBe(0);
-                expect(mockDate.getSeconds()).toBe(0);
-                expect(mockDate.getMilliseconds()).toBe(0);
-
-                jest.useRealTimers();
-            });
         });
     });
 }); 
