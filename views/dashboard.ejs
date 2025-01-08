@@ -48,29 +48,15 @@
                     { time: '9:30pm', label: 'Night' }
                 ];
 
-                // Helper function to parse time string to hours and minutes
-                function parseTimeStr(timeStr) {
-                    const [hours, minutes, period] = timeStr.match(/(\d+):(\d+)(am|pm)/).slice(1);
-                    return {
-                        hours: (period === 'pm' && hours !== '12' ? parseInt(hours) + 12 : parseInt(hours)),
-                        minutes: parseInt(minutes)
-                    };
-                }
-
-                // Get current time in local timezone
-                const now = new Date();
-                const currentTime = {
-                    hours: now.getHours(),
-                    minutes: now.getMinutes()
-                };
-
-                // Create weekStart in local timezone from UTC timestamp
-                const localWeekStart = new Date(weekStartUTC);
-
                 // Generate dates for the week
+                const today = new Date();
+                const currentDay = today.getDay();
+                const weekStart = new Date(today);
+                weekStart.setDate(today.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
+
                 const weekDates = days.map((day, index) => {
-                    const date = new Date(localWeekStart);
-                    date.setDate(localWeekStart.getDate() + index);
+                    const date = new Date(weekStart);
+                    date.setDate(weekStart.getDate() + index);
                     return {
                         name: day,
                         date: date,
@@ -80,44 +66,6 @@
                         })
                     };
                 });
-
-                // Helper function to compare times
-                function isTimeAfter(time1, time2) {
-                    return (time1.hours * 60 + time1.minutes) > (time2.hours * 60 + time2.minutes);
-                }
-
-                // Helper function to find next timeslot
-                function findNextTimeslot(currentDay, currentTime) {
-                    let foundToday = false;
-                    for (const day of weekDates) {
-                        // Create date objects for comparison
-                        const dayStart = new Date(day.date);
-                        dayStart.setHours(0, 0, 0, 0);
-                        const nowStart = new Date(now);
-                        nowStart.setHours(0, 0, 0, 0);
-                        
-                        // Skip past days
-                        if (dayStart < nowStart) continue;
-                        
-                        // If it's today, only show future slots
-                        if (dayStart.getTime() === nowStart.getTime()) {
-                            foundToday = true;
-                            for (const slot of timeSlots) {
-                                const slotTime = parseTimeStr(slot.time);
-                                if (!isTimeAfter(currentTime, slotTime)) {
-                                    return { day, slot };
-                                }
-                            }
-                        }
-                        // For future days, first slot is next
-                        else if (foundToday || dayStart > nowStart) {
-                            return { day, slot: timeSlots[0] };
-                        }
-                    }
-                    return null;
-                }
-
-                const nextSlot = findNextTimeslot(weekDates[0], currentTime);
                 %>
                 
                 <% weekDates.forEach(day => { %>
@@ -127,12 +75,8 @@
                             <div class="day-date"><%= day.formatted %></div>
                         </div>
                         <div class="day-content">
-                            <% timeSlots.forEach(slot => { 
-                                const isNextSlot = nextSlot && 
-                                    nextSlot.day.date.getTime() === day.date.getTime() && 
-                                    nextSlot.slot.time === slot.time;
-                            %>
-                                <div class="time-slot <%= isNextSlot ? 'next-slot' : '' %>">
+                            <% timeSlots.forEach(slot => { %>
+                                <div class="time-slot">
                                     <div class="time-slot-header">
                                         <span class="time"><%= slot.time %></span>
                                         <span class="label"><%= slot.label %></span>
@@ -165,6 +109,7 @@
 
     <script src="/js/header.js"></script>
     <script src="/js/availability.js"></script>
+    <script src="/js/dashboard.js"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

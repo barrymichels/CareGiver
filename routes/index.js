@@ -107,7 +107,6 @@ module.exports = (db) => {
 
                 res.render('dashboard', {
                     user: req.user,
-                    weekStartUTC: weekStart.getTime(),  // Pass as UTC timestamp
                     weekTitle,
                     weekOffset: limitedOffset,
                     assignments,

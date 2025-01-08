@@ -1,3 +1,5 @@
+const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
 document.addEventListener('DOMContentLoaded', () => {
     // Mobile day highlighting
     const isMobile = window.innerWidth <= 768;
@@ -147,4 +149,55 @@ style.textContent = `
         to { opacity: 0; }
     }
 `;
-document.head.appendChild(style); 
+document.head.appendChild(style);
+
+function highlightCurrentTimeslot() {
+    const now = new Date();
+    const currentDay = now.getDay();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+
+    const timeSlots = [
+        { hour: 8, minute: 0 },   // 8:00am
+        { hour: 12, minute: 30 }, // 12:30pm 
+        { hour: 17, minute: 0 },  // 5:00pm
+        { hour: 21, minute: 30 }  // 9:30pm
+    ];
+
+    let currentSlot = null;
+    for (const slot of timeSlots) {
+        if (currentHour < slot.hour || (currentHour === slot.hour && currentMinute < slot.minute)) {
+            currentSlot = slot;
+            break;
+        }
+    }
+
+    if (!currentSlot) {
+        currentSlot = timeSlots[0]; // Default to first slot of next day
+    }
+
+    const slotElements = document.querySelectorAll('.time-slot');
+    slotElements.forEach(slot => {
+        const slotTime = slot.querySelector('.time').textContent;
+        const [slotHour, slotMinute] = slotTime.split(':');
+        
+        if (parseInt(slotHour) === currentSlot.hour && parseInt(slotMinute) === currentSlot.minute) {
+            const slotDay = slot.closest('.day-column');
+            if (slotDay && slotDay.querySelector('.day-name').textContent.toLowerCase() === days[currentDay].toLowerCase()) {
+                slot.classList.add('current-slot');
+            }
+        } else {
+            slot.classList.remove('current-slot');
+        }
+    });
+}
+
+// Call on page load
+highlightCurrentTimeslot();
+
+// Call whenever page comes into view
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        highlightCurrentTimeslot();
+    }
+}); 

@@ -628,3 +628,12 @@
         font-size: 1rem;
     }
 }
+
+.time-slot.current-slot {
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 2px 8px rgba(100, 108, 255, 0.2);
+}
+
+.time-slot.current-slot .time-slot-header {
+    background-color: rgba(100, 108, 255, 0.1);
+}
