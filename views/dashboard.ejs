@@ -64,15 +64,13 @@
                     minutes: now.getMinutes()
                 };
 
-                // Convert weekStart to local timezone by adding the timezone offset
-                const localWeekStart = new Date(weekStart);
-                const tzOffset = now.getTimezoneOffset();
-                localWeekStart.setMinutes(localWeekStart.getMinutes() - tzOffset);
+                // Create weekStart in local timezone from UTC timestamp
+                const localWeekStart = new Date(weekStartUTC);
 
                 // Generate dates for the week
                 const weekDates = days.map((day, index) => {
                     const date = new Date(localWeekStart);
-                    date.setDate(date.getDate() + index);
+                    date.setDate(localWeekStart.getDate() + index);
                     return {
                         name: day,
                         date: date,
@@ -92,13 +90,17 @@
                 function findNextTimeslot(currentDay, currentTime) {
                     let foundToday = false;
                     for (const day of weekDates) {
+                        // Create date objects for comparison
+                        const dayStart = new Date(day.date);
+                        dayStart.setHours(0, 0, 0, 0);
+                        const nowStart = new Date(now);
+                        nowStart.setHours(0, 0, 0, 0);
+                        
                         // Skip past days
-                        if (day.date < now.setHours(0,0,0,0)) continue;
+                        if (dayStart < nowStart) continue;
                         
                         // If it's today, only show future slots
-                        if (day.date.getDate() === now.getDate() && 
-                            day.date.getMonth() === now.getMonth() && 
-                            day.date.getFullYear() === now.getFullYear()) {
+                        if (dayStart.getTime() === nowStart.getTime()) {
                             foundToday = true;
                             for (const slot of timeSlots) {
                                 const slotTime = parseTimeStr(slot.time);
@@ -108,7 +110,7 @@
                             }
                         }
                         // For future days, first slot is next
-                        else if (foundToday || day.date > now) {
+                        else if (foundToday || dayStart > nowStart) {
                             return { day, slot: timeSlots[0] };
                         }
                     }
@@ -127,7 +129,7 @@
                         <div class="day-content">
                             <% timeSlots.forEach(slot => { 
                                 const isNextSlot = nextSlot && 
-                                    nextSlot.day.date.getDate() === day.date.getDate() && 
+                                    nextSlot.day.date.getTime() === day.date.getTime() && 
                                     nextSlot.slot.time === slot.time;
                             %>
                                 <div class="time-slot <%= isNextSlot ? 'next-slot' : '' %>">
@@ -155,7 +157,6 @@
         <%- include('partials/availability-manager', { 
             days,
             timeSlots,
-            weekStart,
             userAvailability 
         }) %>
     </main>

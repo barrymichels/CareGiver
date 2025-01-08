@@ -34,12 +34,12 @@ module.exports = (db) => {
                 const today = new Date();
                 const weekStart = new Date(today);
                 weekStart.setDate(today.getDate() - (weekStart.getDay() - 1) + (limitedOffset * 7));
-                // Reset time to midnight
+                // Reset time to midnight UTC
                 weekStart.setHours(0, 0, 0, 0);
 
                 const weekEnd = new Date(weekStart);
                 weekEnd.setDate(weekStart.getDate() + 6);
-                // Set weekEnd to end of day
+                // Set weekEnd to end of day UTC
                 weekEnd.setHours(23, 59, 59, 999);
 
                 // Get assignments for the week
@@ -107,7 +107,7 @@ module.exports = (db) => {
 
                 res.render('dashboard', {
                     user: req.user,
-                    weekStart,
+                    weekStartUTC: weekStart.getTime(),  // Pass as UTC timestamp
                     weekTitle,
                     weekOffset: limitedOffset,
                     assignments,
