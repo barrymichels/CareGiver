@@ -570,9 +570,10 @@
 
 /* In public/css/dashboard.css */
 .week-navigation {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(100px, 1fr) auto minmax(100px, 1fr);
     align-items: center;
-    justify-content: space-between;
+    gap: 1rem;
     width: 100%;
     margin-bottom: 1.5rem;
     padding: 0 0.5rem;
@@ -591,43 +592,39 @@
     text-align: center;
 }
 
-.nav-button:hover {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-color);
-}
-
 .prev-week {
-    margin-right: auto;
+    justify-self: start;
 }
 
 .next-week {
-    margin-left: auto;
+    justify-self: end;
 }
 
-.week-title {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+.week-title,
+.section-title {
+    grid-column: 2;
+    text-align: center;
     font-size: 1.1rem;
     font-weight: 500;
     color: var(--text-color);
+    white-space: nowrap;
 }
 
 /* Mobile responsive styles */
 @media (max-width: 768px) {
     .week-navigation {
+        gap: 0.5rem;
         padding: 0;
-        position: relative;
     }
 
     .nav-button {
         padding: 0.4rem 0.8rem;
         font-size: 0.85rem;
-        min-width: 100px;
+        min-width: auto;
     }
 
-    .week-title {
+    .week-title,
+    .section-title {
         font-size: 1rem;
     }
 }

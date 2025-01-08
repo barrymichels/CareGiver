@@ -3,21 +3,27 @@ const router = express.Router();
 const { isAuthenticated, isAdmin } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 
-module.exports = function(db) {
+module.exports = function (db) {
     const dbHelper = new DatabaseHelper(db);
 
     // Admin dashboard
     router.get('/', isAuthenticated, isAdmin, async (req, res) => {
         try {
-            const nextWeekStart = new Date();
-            nextWeekStart.setDate(nextWeekStart.getDate() + 7 - nextWeekStart.getDay() + 1);
-            const nextWeekEnd = new Date(nextWeekStart);
-            nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+            const weekOffset = parseInt(req.query.weekOffset) || 0;
+            // Limit week offset between -4 and 4
+            const limitedOffset = Math.max(-4, Math.min(4, weekOffset));
+
+            const today = new Date();
+            const targetWeekStart = new Date(today);
+            // Calculate target week start based on offset
+            targetWeekStart.setDate(today.getDate() + 7 - today.getDay() + 1 + (limitedOffset * 7));
+            const targetWeekEnd = new Date(targetWeekStart);
+            targetWeekEnd.setDate(targetWeekStart.getDate() + 6);
 
             // Get only active users
             const users = await new Promise((resolve, reject) => {
                 db.all(
-                    'SELECT id, first_name, last_name FROM users WHERE is_active = 1', 
+                    'SELECT id, first_name, last_name FROM users WHERE is_active = 1',
                     (err, rows) => {
                         if (err) reject(err);
                         resolve(rows || []);
@@ -25,7 +31,7 @@ module.exports = function(db) {
                 );
             });
 
-            // Get all availability for next week (only for active users)
+            // Get availability for target week
             const availability = await new Promise((resolve, reject) => {
                 db.all(
                     `SELECT a.*, u.first_name, u.last_name 
@@ -35,8 +41,8 @@ module.exports = function(db) {
                      AND a.is_available = 1
                      AND u.is_active = 1`,
                     [
-                        nextWeekStart.toISOString().split('T')[0],
-                        nextWeekEnd.toISOString().split('T')[0]
+                        targetWeekStart.toISOString().split('T')[0],
+                        targetWeekEnd.toISOString().split('T')[0]
                     ],
                     (err, rows) => {
                         if (err) reject(err);
@@ -45,7 +51,7 @@ module.exports = function(db) {
                 );
             });
 
-            // Get existing assignments (only for active users)
+            // Get assignments for target week
             const assignments = await new Promise((resolve, reject) => {
                 db.all(
                     `SELECT a.*, u.first_name, u.last_name 
@@ -54,8 +60,8 @@ module.exports = function(db) {
                      WHERE a.day_date BETWEEN ? AND ?
                      AND u.is_active = 1`,
                     [
-                        nextWeekStart.toISOString().split('T')[0],
-                        nextWeekEnd.toISOString().split('T')[0]
+                        targetWeekStart.toISOString().split('T')[0],
+                        targetWeekEnd.toISOString().split('T')[0]
                     ],
                     (err, rows) => {
                         if (err) reject(err);
@@ -64,12 +70,26 @@ module.exports = function(db) {
                 );
             });
 
+            // Generate week title based on offset
+            let weekTitle;
+            switch (limitedOffset) {
+                case -4: weekTitle = '4 Weeks Ago'; break;
+                case -3: weekTitle = '3 Weeks Ago'; break;
+                case -2: weekTitle = '2 Weeks Ago'; break;
+                case -1: weekTitle = 'This Week'; break;  // Changed from 'Last Week'
+                case 0: weekTitle = 'Next Week'; break;
+                case 1: weekTitle = 'Week After Next'; break;
+                default: weekTitle = `${Math.abs(limitedOffset)} Weeks ${limitedOffset > 0 ? 'Ahead' : 'Ago'}`;
+            }
+
             res.render('admin', {
                 user: req.user,
                 users,
                 availability,
                 assignments,
-                nextWeekStart
+                nextWeekStart: targetWeekStart,
+                weekTitle,
+                weekOffset: limitedOffset
             });
         } catch (error) {
             console.error('Error loading admin dashboard:', error);
@@ -90,7 +110,7 @@ module.exports = function(db) {
                 );
             });
 
-            res.render('admin/users', { 
+            res.render('admin/users', {
                 user: req.user,
                 users: users
             });
@@ -103,7 +123,7 @@ module.exports = function(db) {
     // Update assignments
     router.post('/assign', isAdmin, async (req, res) => {
         const { assignments } = req.body;
-        
+
         try {
             await new Promise((resolve, reject) => {
                 db.run('BEGIN TRANSACTION', (err) => {
@@ -174,7 +194,7 @@ module.exports = function(db) {
     router.put('/users/:id', isAuthenticated, isAdmin, async (req, res) => {
         const { id } = req.params;
         const { is_active, is_admin } = req.body;
-        
+
         try {
             // Validate that we're only updating one field at a time
             if (typeof is_active !== 'boolean' && typeof is_admin !== 'boolean') {
@@ -213,4 +233,4 @@ module.exports = function(db) {
     });
 
     return router;
-}; 
+};
