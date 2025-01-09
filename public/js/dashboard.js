@@ -3,7 +3,7 @@ const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
 document.addEventListener('DOMContentLoaded', () => {
     // Mobile day highlighting
     const isMobile = window.innerWidth <= 768;
-    
+
     if (isMobile) {
         const dayColumns = document.querySelectorAll('.day-column');
         const today = new Date().getDay();
@@ -41,7 +41,7 @@ function showToast(message, type = 'success') {
     toast.className = `toast ${type}`;
     toast.textContent = message;
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.remove();
     }, 3000);
@@ -84,7 +84,7 @@ function highlightCurrentTimeslot() {
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
 
-    // Adjust currentDay to match our days array
+    // Adjust currentDay to match our days array (0-6 where 0 is Monday)
     currentDay = currentDay === 0 ? 6 : currentDay - 1;
 
     const timeSlots = [
@@ -95,45 +95,46 @@ function highlightCurrentTimeslot() {
     ];
 
     let currentSlot = null;
-    for (const slot of timeSlots) {
-        if (currentHour < slot.hour || (currentHour === slot.hour && currentMinute < slot.minute)) {
-            currentSlot = slot;
-            break;
+    let nextDay = currentDay;
+
+    // If we're past the last slot of the day, look at tomorrow's slots
+    if (currentHour >= timeSlots[timeSlots.length - 1].hour) {
+        nextDay = (currentDay + 1) % 7;
+        currentSlot = timeSlots[0];
+    } else {
+        // Find next available slot today
+        for (const slot of timeSlots) {
+            if (currentHour < slot.hour || (currentHour === slot.hour && currentMinute < slot.minute)) {
+                currentSlot = slot;
+                break;
+            }
         }
     }
 
+    // If no slot found today, use first slot tomorrow
     if (!currentSlot) {
-        currentSlot = timeSlots[0]; // Default to first slot of next day
+        nextDay = (currentDay + 1) % 7;
+        currentSlot = timeSlots[0];
     }
 
-    // Remove any existing highlights
+    // Remove existing highlights
     document.querySelectorAll('.time-slot').forEach(slot => {
         slot.classList.remove('current-slot');
     });
 
+    // Highlight the next slot
     const slotElements = document.querySelectorAll('.time-slot');
     let highlightedSlot = null;
+
     slotElements.forEach(slot => {
         const slotTime = slot.querySelector('.time').textContent;
-        let [time, period] = slotTime.split(/([ap]m)/i);
-        let [slotHour, slotMinute] = time.split(':');
-        
-        // Convert to 24-hour format if needed
-        slotHour = parseInt(slotHour);
-        slotMinute = parseInt(slotMinute);
-        if (period && period.toLowerCase() === 'pm' && slotHour !== 12) {
-            slotHour += 12;
-        }
-        if (period && period.toLowerCase() === 'am' && slotHour === 12) {
-            slotHour = 0;
-        }
-        
-        if (slotHour === currentSlot.hour && slotMinute === currentSlot.minute) {
-            const slotDay = slot.closest('.day-column');
-            if (slotDay && slotDay.querySelector('.day-name').textContent.toLowerCase() === days[currentDay]) {
-                slot.classList.add('current-slot');
-                highlightedSlot = slot;
-            }
+        const slotDay = slot.closest('.day-column');
+
+        if (slotDay &&
+            slotDay.querySelector('.day-name').textContent.toLowerCase() === days[nextDay] &&
+            slotTime === `${currentSlot.hour}:${currentSlot.minute.toString().padStart(2, '0')}${currentSlot.hour >= 12 ? 'pm' : 'am'}`) {
+            slot.classList.add('current-slot');
+            highlightedSlot = slot;
         }
     });
 
@@ -151,4 +152,4 @@ document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
         highlightCurrentTimeslot();
     }
-}); 
+});
