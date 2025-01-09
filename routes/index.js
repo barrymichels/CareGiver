@@ -170,18 +170,28 @@ module.exports = (db) => {
                         });
                 });
 
-                // Get user availability
+                // Get user availability for next week
+                const nextWeekStart = new Date(today);
+                nextWeekStart.setDate(today.getDate() + (8 - today.getDay())); // Next Monday
+                const nextWeekEnd = new Date(nextWeekStart);
+                nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+
                 const userAvailability = await new Promise((resolve, reject) => {
                     db.all(
                         'SELECT * FROM availability WHERE user_id = ? AND day_date BETWEEN ? AND ?',
                         [
                             req.user.id,
-                            weekStart.toISOString().split('T')[0],
-                            weekEnd.toISOString().split('T')[0]
+                            nextWeekStart.toISOString().split('T')[0],
+                            nextWeekEnd.toISOString().split('T')[0]
                         ],
                         (err, rows) => {
                             if (err) reject(err);
-                            resolve(rows || []);
+                            // Convert SQLite integer to boolean
+                            const converted = (rows || []).map(row => ({
+                                ...row,
+                                is_available: row.is_available === 1
+                            }));
+                            resolve(converted);
                         }
                     );
                 });

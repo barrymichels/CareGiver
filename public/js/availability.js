@@ -70,6 +70,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.returnValue = '';
             }
         });
+
+        // Handle navigation within the app
+        document.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', (e) => {
+                if (isDirty) {
+                    e.preventDefault();
+                    showUnsavedChangesModal(e.currentTarget.href, () => {
+                        isDirty = false;
+                    });
+                }
+            });
+        });
     }
 });
 
@@ -84,7 +96,7 @@ function showToast(message, type = 'success') {
     }, 3000);
 }
 
-function showUnsavedChangesModal(targetHref) {
+function showUnsavedChangesModal(targetHref, onLeave) {
     const modal = document.getElementById('unsavedChangesModal');
     if (!modal) return;
 
@@ -101,7 +113,7 @@ function showUnsavedChangesModal(targetHref) {
     
     if (leaveButton) {
         leaveButton.onclick = () => {
-            isDirty = false; // Clear the dirty flag before navigating
+            if (onLeave) onLeave();
             window.location.href = targetHref;
         };
     }

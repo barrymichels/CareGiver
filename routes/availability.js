@@ -47,15 +47,6 @@ module.exports = function(db) {
         
         try {
             await dbHelper.withTransaction(async () => {
-                // Delete existing availability for the dates
-                const dates = [...new Set(availability.map(slot => slot.date))];
-                for (const date of dates) {
-                    await dbHelper.runWithRetry(
-                        'DELETE FROM availability WHERE user_id = ? AND day_date = ?',
-                        [req.user.id, date]
-                    );
-                }
-
                 // Insert new availability, using REPLACE to handle any duplicates
                 for (const slot of availability) {
                     await dbHelper.runWithRetry(

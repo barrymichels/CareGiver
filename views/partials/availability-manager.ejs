@@ -34,7 +34,7 @@
                         const isAvailable = (userAvailability.find(a => 
                             a.day_date === day.date.toISOString().split('T')[0] && 
                             a.time_slot === slot.time
-                        )?.is_available === 1) ?? true;
+                        )?.is_available) ?? false;
                         %>
                         <div class="availability-slot">
                             <label class="slot-toggle">

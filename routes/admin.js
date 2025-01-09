@@ -419,7 +419,12 @@ module.exports = function (db) {
                     ],
                     (err, rows) => {
                         if (err) reject(err);
-                        resolve(rows || []);
+                        // Convert SQLite integer to boolean
+                        const converted = (rows || []).map(row => ({
+                            ...row,
+                            is_available: row.is_available === 1
+                        }));
+                        resolve(converted);
                     }
                 );
             });
