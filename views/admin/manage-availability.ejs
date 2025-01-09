@@ -7,15 +7,19 @@
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="/css/header.css">
     <link rel="stylesheet" href="/css/admin.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
 </head>
 <body>
     <%- include('../partials/header', { user }) %>
     
     <main class="admin-content">
         <div class="availability-container">
-            <div class="availability-header">
-                <a href="/admin/users" class="back-button">← Back to Users</a>
-                <h1>Managing Availability for <%= targetUser.first_name %> <%= targetUser.last_name %></h1>
+            <div class="admin-controls">
+                <div class="nav-buttons">
+                    <a href="/admin/users" class="nav-button">← Back to Users</a>
+                </div>
+                <h1 class="admin-title">Managing Availability for <%= targetUser.first_name %> <%= targetUser.last_name %></h1>
+                <div class="nav-buttons-spacer"></div>
             </div>
 
             <div class="availability-wrapper">

@@ -7,6 +7,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const checkboxes = availabilityContainer.querySelectorAll('input[type="checkbox"]');
         let isDirty = false;
 
+        // Add handlers for Set All buttons
+        const setAllAvailable = document.getElementById('setAllAvailable');
+        const setAllUnavailable = document.getElementById('setAllUnavailable');
+
+        if (setAllAvailable) {
+            setAllAvailable.addEventListener('click', () => {
+                checkboxes.forEach(checkbox => {
+                    if (!checkbox.checked) {
+                        checkbox.checked = true;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                });
+            });
+        }
+
+        if (setAllUnavailable) {
+            setAllUnavailable.addEventListener('click', () => {
+                checkboxes.forEach(checkbox => {
+                    if (checkbox.checked) {
+                        checkbox.checked = false;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                });
+            });
+        }
+
         // Disable save button initially
         if (saveButton && !saveButton.dataset.handlerAttached) {
             saveButton.disabled = true;

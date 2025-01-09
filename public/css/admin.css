@@ -751,3 +751,42 @@
         max-width: none;
     }
 } 
+
+.availability-header {
+    display: grid;
+    grid-template-columns: minmax(100px, 1fr) auto minmax(100px, 1fr);
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    margin-bottom: 1.5rem;
+}
+
+.availability-header h1 {
+    font-size: 1.5rem;
+    color: var(--text-color);
+    white-space: nowrap;
+    margin: 0;
+    text-align: center;
+    grid-column: 2;
+}
+
+.availability-header .nav-button {
+    justify-self: start;
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+    .availability-header {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    .availability-header h1 {
+        grid-column: 1;
+        font-size: 1.2rem;
+    }
+
+    .availability-header .nav-button {
+        justify-self: center;
+    }
+} 
