@@ -198,6 +198,7 @@ function highlightCurrentTimeslot() {
     });
 
     const slotElements = document.querySelectorAll('.time-slot');
+    let highlightedSlot = null;
     slotElements.forEach(slot => {
         const slotTime = slot.querySelector('.time').textContent;
         let [time, period] = slotTime.split(/([ap]m)/i);
@@ -217,9 +218,15 @@ function highlightCurrentTimeslot() {
             const slotDay = slot.closest('.day-column');
             if (slotDay && slotDay.querySelector('.day-name').textContent.toLowerCase() === days[currentDay]) {
                 slot.classList.add('current-slot');
+                highlightedSlot = slot;
             }
         }
     });
+
+    // Scroll to highlighted slot on mobile
+    if (highlightedSlot && window.innerWidth <= 768) {
+        highlightedSlot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
 }
 
 // Call on page load
