@@ -76,11 +76,6 @@ document.head.appendChild(style);
 
 function highlightCurrentTimeslot() {
     const now = new Date();
-    console.log('Current time:', {
-        hour: now.getHours(),
-        minute: now.getMinutes()
-    });
-
     // Only highlight if we're viewing the current week
     const weekTitle = document.querySelector('.week-title').textContent;
     if (weekTitle !== 'This Week') return;
