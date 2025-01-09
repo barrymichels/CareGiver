@@ -4,17 +4,14 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - SESSION_SECRET=change_this_in_production
-      - DB_PATH=/usr/src/app/data/database.sqlite
+      - "${PORT:-3000}:${PORT:-3000}"
+    env_file:
+      - .env
     volumes:
       - ./data:/usr/src/app/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/"]
       interval: 30s
       timeout: 10s
       retries: 3

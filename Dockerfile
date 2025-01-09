@@ -22,17 +22,15 @@ RUN mkdir -p /usr/src/app/data && \
     chown -R 1000:1000 /usr/src/app && \
     chmod -R 755 /usr/src/app/data
 
-# Set environment variables
+# Set NODE_ENV at build time
 ENV NODE_ENV=production
-ENV PORT=3000
-ENV DB_PATH=/usr/src/app/data/database.sqlite
 
-# Expose port
+# Expose port (this is just documentation)
 EXPOSE 3000
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000/ || exit 1
+    CMD curl -f http://localhost:${PORT:-3000}/ || exit 1
 
 # Switch to non-root user
 USER 1000
