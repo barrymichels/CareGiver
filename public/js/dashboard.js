@@ -75,39 +75,38 @@ style.textContent = `
 document.head.appendChild(style);
 
 function highlightCurrentTimeslot() {
+    const now = new Date();
+    console.log('Current time:', {
+        hour: now.getHours(),
+        minute: now.getMinutes()
+    });
+
     // Only highlight if we're viewing the current week
     const weekTitle = document.querySelector('.week-title').textContent;
     if (weekTitle !== 'This Week') return;
 
-    const now = new Date();
     let currentDay = now.getDay();
-    const currentHour = now.getHours();
+    const currentHour = now.getHours(); // 24-hour format
     const currentMinute = now.getMinutes();
 
     // Adjust currentDay to match our days array (0-6 where 0 is Monday)
     currentDay = currentDay === 0 ? 6 : currentDay - 1;
 
     const timeSlots = [
-        { hour: 8, minute: 0 },   // 8:00am
-        { hour: 12, minute: 30 }, // 12:30pm 
-        { hour: 17, minute: 0 },  // 5:00pm
-        { hour: 21, minute: 30 }  // 9:30pm
+        { hour: 8, minute: 0 },    // 8:00am
+        { hour: 12, minute: 30 },  // 12:30pm 
+        { hour: 17, minute: 0 },   // 5:00pm  (was comparing 5 instead of 17)
+        { hour: 21, minute: 30 }   // 9:30pm  (was comparing 9 instead of 21)
     ];
 
     let currentSlot = null;
     let nextDay = currentDay;
 
-    // If we're past the last slot of the day, look at tomorrow's slots
-    if (currentHour >= timeSlots[timeSlots.length - 1].hour) {
-        nextDay = (currentDay + 1) % 7;
-        currentSlot = timeSlots[0];
-    } else {
-        // Find next available slot today
-        for (const slot of timeSlots) {
-            if (currentHour < slot.hour || (currentHour === slot.hour && currentMinute < slot.minute)) {
-                currentSlot = slot;
-                break;
-            }
+    // Find next available slot today
+    for (const slot of timeSlots) {
+        if (currentHour < slot.hour || (currentHour === slot.hour && currentMinute < slot.minute)) {
+            currentSlot = slot;
+            break;
         }
     }
 
@@ -132,7 +131,7 @@ function highlightCurrentTimeslot() {
 
         if (slotDay &&
             slotDay.querySelector('.day-name').textContent.toLowerCase() === days[nextDay] &&
-            slotTime === `${currentSlot.hour}:${currentSlot.minute.toString().padStart(2, '0')}${currentSlot.hour >= 12 ? 'pm' : 'am'}`) {
+            slotTime === get12HourFormat(currentSlot.hour, currentSlot.minute)) {
             slot.classList.add('current-slot');
             highlightedSlot = slot;
         }
@@ -153,3 +152,9 @@ document.addEventListener('visibilitychange', () => {
         highlightCurrentTimeslot();
     }
 });
+
+function get12HourFormat(hour, minute) {
+    const adjustedHour = hour > 12 ? hour - 12 : hour;
+    const period = hour >= 12 ? 'pm' : 'am';
+    return `${adjustedHour}:${minute.toString().padStart(2, '0')}${period}`;
+}
