@@ -138,8 +138,9 @@ module.exports = (db) => {
                 const today = new Date();
                 const weekStart = new Date(today);
                 
-                // First, move to the start of the current week (Monday)
-                weekStart.setDate(today.getDate() - (weekStart.getDay() - 1));
+                // Adjust to start of current week (Monday)
+                const currentDay = weekStart.getDay();
+                weekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
                 
                 // Then, adjust by the week offset
                 weekStart.setDate(weekStart.getDate() + (limitedOffset * 7));
