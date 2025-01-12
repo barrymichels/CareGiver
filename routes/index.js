@@ -98,7 +98,7 @@ module.exports = (db) => {
                     'BEGIN:VEVENT',
                     `DTSTART:${formatDateToICS(startDate)}`,
                     `DTEND:${formatDateToICS(endDate)}`,
-                    `SUMMARY:Your Shift`,
+                    `SUMMARY:${process.env.ICS_EVENT_SUMMARY || 'CareGiver Shift'}`,
                     'END:VEVENT'
                 ]);
             });
