@@ -138,20 +138,29 @@ module.exports = (db) => {
                 const today = new Date();
                 const weekStart = new Date(today);
                 
-                // Adjust to start of current week (Monday)
-                const currentDay = weekStart.getDay();
-                weekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-                
+                // Get current time in EST (UTC-5)
+                const estTime = new Date(today.getTime() - (5 * 60 * 60 * 1000)); // Subtract 5 hours for EST
+                const estDay = estTime.getUTCDay();
+                const estHour = estTime.getUTCHours();
+
+                // If it's Sunday in EST and after 10pm EST, show next week
+                if (estDay === 0 && estHour >= 22) {
+                    // Calculate next Monday from the EST perspective
+                    const daysUntilMonday = 1; // From Sunday to Monday
+                    weekStart.setTime(estTime.getTime() + (daysUntilMonday * 24 * 60 * 60 * 1000));
+                    weekStart.setUTCHours(0, 0, 0, 0);
+                } else {
+                    // Set to current week's Monday in UTC
+                    weekStart.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
+                    weekStart.setUTCHours(0, 0, 0, 0);
+                }
+
                 // Then, adjust by the week offset
-                weekStart.setDate(weekStart.getDate() + (limitedOffset * 7));
-                
-                // Reset time to midnight UTC
-                weekStart.setHours(0, 0, 0, 0);
+                weekStart.setUTCDate(weekStart.getUTCDate() + (limitedOffset * 7));
 
                 const weekEnd = new Date(weekStart);
-                weekEnd.setDate(weekStart.getDate() + 6);
-                // Set weekEnd to end of day UTC
-                weekEnd.setHours(23, 59, 59, 999);
+                weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+                weekEnd.setUTCHours(23, 59, 59, 999);
 
                 // Get assignments for the week
                 const assignments = await new Promise((resolve, reject) => {
