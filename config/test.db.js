@@ -13,8 +13,8 @@ function initializeTestDb() {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     first_name TEXT NOT NULL,
                     last_name TEXT NOT NULL,
-                    email TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
+                    email TEXT UNIQUE,
+                    password TEXT,
                     is_admin BOOLEAN NOT NULL DEFAULT 0,
                     is_active BOOLEAN NOT NULL DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP

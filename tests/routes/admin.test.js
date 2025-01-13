@@ -4,7 +4,8 @@ const session = require('express-session');
 const passport = require('passport');
 const path = require('path');
 const { testDb, initializeTestDb } = require('../../config/test.db');
-const { createTestUser, clearTestDb, createAvailability, normalizeViewPath } = require('../helpers/testHelpers');
+const { createTestUser, clearTestDb, createAvailability, normalizeViewPath, getAvailability } = require('../helpers/testHelpers');
+const bcrypt = require('bcrypt');
 
 // Create express app for testing
 const app = express();
@@ -515,6 +516,257 @@ describe('Admin Routes', () => {
 
             expect(response.body).toHaveProperty('error', 'Server error');
             expect(testDb.run).toHaveBeenCalled();
+            expect(console.error).toHaveBeenCalled();
+        });
+    });
+
+    describe('Virtual User Management', () => {
+        it('should create a virtual user', async () => {
+            // Create a virtual user
+            const response = await request(app)
+                .post('/admin/users/virtual')
+                .send({
+                    firstName: 'Virtual',
+                    lastName: 'User'
+                })
+                .expect(200);
+
+            expect(response.body.message).toBe('Virtual user created successfully');
+
+            // Verify user was created
+            const user = await new Promise((resolve) => {
+                testDb.get(
+                    'SELECT * FROM users WHERE first_name = ? AND last_name = ?',
+                    ['Virtual', 'User'],
+                    (err, row) => resolve(row)
+                );
+            });
+
+            expect(user).toBeDefined();
+            expect(user.email).toBeNull();
+            expect(user.is_active).toBe(1); // Virtual users are created as active
+        });
+
+        it('should validate virtual user input', async () => {
+            const response = await request(app)
+                .post('/admin/users/virtual')
+                .send({
+                    firstName: '',
+                    lastName: ''
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('First and last name are required');
+        });
+
+        it('should handle database errors when creating virtual user', async () => {
+            console.error = jest.fn();
+            const originalRun = testDb.run;
+            testDb.run = jest.fn((sql, params, callback) => {
+                if (sql.includes('INSERT INTO users')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalRun.call(testDb, sql, params, callback);
+                }
+            });
+
+            const response = await request(app)
+                .post('/admin/users/virtual')
+                .send({
+                    firstName: 'Virtual',
+                    lastName: 'User'
+                })
+                .expect(500);
+
+            expect(response.body.error).toBe('Server error');
+            expect(console.error).toHaveBeenCalled();
+        });
+    });
+
+    describe('Virtual User Conversion', () => {
+        let virtualUser;
+
+        beforeEach(async () => {
+            // Create a virtual user with is_active = 1
+            virtualUser = await new Promise((resolve, reject) => {
+                testDb.run(
+                    'INSERT INTO users (first_name, last_name, is_active) VALUES (?, ?, 1)',
+                    ['Virtual', 'User'],
+                    function(err) {
+                        if (err) reject(err);
+                        testDb.get(
+                            'SELECT * FROM users WHERE id = ?',
+                            [this.lastID],
+                            (err, row) => {
+                                if (err) reject(err);
+                                resolve(row);
+                            }
+                        );
+                    }
+                );
+            });
+        });
+
+        it('should convert a virtual user to a real user', async () => {
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/convert`)
+                .send({
+                    email: 'virtual@example.com'
+                })
+                .expect(200);
+
+            expect(response.body.message).toBe('User converted successfully');
+
+            // Verify user was converted
+            const user = await new Promise((resolve) => {
+                testDb.get(
+                    'SELECT * FROM users WHERE id = ?',
+                    [virtualUser.id],
+                    (err, row) => resolve(row)
+                );
+            });
+
+            expect(user.email).toBe('virtual@example.com');
+            expect(user.password).toBeDefined();
+        });
+
+        it('should validate email format', async () => {
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/convert`)
+                .send({
+                    email: 'invalid-email'
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('Invalid email format');
+        });
+
+        it('should prevent converting non-virtual users', async () => {
+            const response = await request(app)
+                .post(`/admin/users/${regularUser.id}/convert`)
+                .send({
+                    email: 'new@example.com'
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('User is already a real user');
+        });
+
+        it('should prevent using existing email', async () => {
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/convert`)
+                .send({
+                    email: 'user@example.com' // Regular user's email
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('Email is already registered');
+        });
+
+        it('should handle non-existent users', async () => {
+            const response = await request(app)
+                .post('/admin/users/999/convert')
+                .send({
+                    email: 'virtual@example.com'
+                })
+                .expect(404);
+
+            expect(response.body.error).toBe('User not found');
+        });
+    });
+
+    describe('Virtual User Availability', () => {
+        let virtualUser;
+        const availabilityData = [
+            { date: '2024-01-01', time: '10:00am', isAvailable: true },
+            { date: '2024-01-01', time: '11:00am', isAvailable: false },
+            { date: '2024-01-02', time: '10:00am', isAvailable: true }
+        ];
+
+        beforeEach(async () => {
+            virtualUser = await createTestUser({
+                name: 'Virtual User',
+                is_virtual: 1,
+                is_active: 1
+            });
+        });
+
+        it('should update virtual user availability', async () => {
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/availability`)
+                .send({ availability: availabilityData });
+
+            expect(response.status).toBe(200);
+
+            const updatedAvailability = await getAvailability(virtualUser.id);
+            expect(updatedAvailability.length).toBe(availabilityData.length);
+
+            // Sort both arrays by date and time for comparison
+            const sortedExpected = [...availabilityData].sort((a, b) => 
+                a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)
+            );
+            const sortedActual = [...updatedAvailability].sort((a, b) => 
+                a.day_date === b.day_date ? a.time_slot.localeCompare(b.time_slot) : a.day_date.localeCompare(b.day_date)
+            );
+
+            sortedExpected.forEach((expected, index) => {
+                const actual = sortedActual[index];
+                expect(actual.user_id).toBe(virtualUser.id);
+                expect(actual.day_date).toBe(expected.date);
+                expect(actual.time_slot).toBe(expected.time);
+                expect(actual.is_available).toBe(expected.isAvailable);
+            });
+        });
+
+        it('should validate availability data', async () => {
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/availability`)
+                .send({
+                    availability: [
+                        { date: '2024-01-01' } // Missing time and isAvailable
+                    ]
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('Invalid slot data');
+        });
+
+        it('should handle invalid availability array', async () => {
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/availability`)
+                .send({
+                    availability: 'not-an-array'
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('Invalid availability data');
+        });
+
+        it('should handle database errors when updating availability', async () => {
+            console.error = jest.fn();
+            const originalRun = testDb.run;
+            testDb.run = jest.fn((sql, params, callback) => {
+                if (sql.includes('INSERT OR REPLACE INTO availability')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalRun.call(testDb, sql, params, callback);
+                }
+            });
+
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/availability`)
+                .send({
+                    availability: [
+                        {
+                            date: '2024-01-01',
+                            time: '9:00am',
+                            isAvailable: true
+                        }
+                    ]
+                })
+                .expect(500);
+
+            expect(response.body.error).toBe('Server error');
             expect(console.error).toHaveBeenCalled();
         });
     });
