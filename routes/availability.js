@@ -10,21 +10,17 @@ module.exports = function(db) {
     router.get('/', isAuthenticated, isActive, async (req, res) => {
         try {
             const weekOffset = parseInt(req.query.weekOffset) || 0;
-            console.log('Week offset:', weekOffset);
             
             // Limit week offset between -1 (this week) and 0 (next week)
             const limitedOffset = Math.max(-1, Math.min(0, weekOffset));
-            console.log('Limited offset:', limitedOffset);
 
             // Calculate the start of the target week
             const today = new Date();
             const targetWeekStart = new Date(today);
             targetWeekStart.setDate(today.getDate() + (8 - today.getDay()) + (limitedOffset * 7));
-            console.log('Target week start:', targetWeekStart);
 
             // Format week title
             const weekTitle = limitedOffset === 0 ? 'Next Week' : 'This Week';
-            console.log('Week title:', weekTitle);
 
             const availability = await new Promise((resolve, reject) => {
                 db.all(
@@ -48,7 +44,6 @@ module.exports = function(db) {
                     }
                 );
             });
-            console.log('User availability:', availability);
 
             // Get time slots
             const timeSlots = [
@@ -59,7 +54,6 @@ module.exports = function(db) {
             ];
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-            console.log('Rendering availability view');
             res.render('availability', {
                 user: req.user,
                 userAvailability: availability,
