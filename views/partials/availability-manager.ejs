@@ -1,9 +1,26 @@
 <div class="availability-section">
     <div class="section-header">
-        <h3 class="section-title"><%= customTitle || 'My Availability for Next Week' %></h3>
-        <div class="availability-controls">
-            <button type="button" class="nav-button" id="setAllAvailable">Set All Available</button>
-            <button type="button" class="nav-button" id="setAllUnavailable">Set All Unavailable</button>
+        <div class="week-controls">
+            <div class="availability-controls">
+                <button type="button" class="nav-button" id="setAllAvailable">Set All Available</button>
+                <button type="button" class="nav-button" id="setAllUnavailable">Set All Unavailable</button>
+            </div>
+            
+            <h2 class="week-title">My Availability for <%= weekTitle %></h2>
+            
+            <div class="week-navigation">
+                <% if (weekOffset > -1) { %>
+                    <a href="/availability?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
+                        &larr; Previous
+                    </a>
+                <% } %>
+                
+                <% if (weekOffset < 0) { %>
+                    <a href="/availability?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
+                        Next &rarr;
+                    </a>
+                <% } %>
+            </div>
         </div>
     </div>
     <div class="availability-grid">

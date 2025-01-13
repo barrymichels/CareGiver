@@ -13,35 +13,27 @@
     
     <main class="dashboard-content">
         <div class="week-view">
-            <div class="week-header">
-                <div class="week-controls">
-                    <h2 class="week-title">My Availability for <%= weekTitle %></h2>
-                    
-                    <div class="week-navigation">
-                        <% if (weekOffset > -1) { %>
-                            <a href="/availability?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
-                                &larr; Previous
-                            </a>
-                        <% } %>
-                        
-                        <% if (weekOffset < 0) { %>
-                            <a href="/availability?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
-                                Next &rarr;
-                            </a>
-                        <% } %>
-                    </div>
-                </div>
-            </div>
-
             <%- include('partials/availability-manager', { 
                 days,
                 timeSlots,
                 userAvailability,
-                customTitle: `My Availability for ${weekTitle}`,
-                weekStart
+                weekStart,
+                weekTitle,
+                weekOffset
             }) %>
         </div>
     </main>
+
+    <div id="unsavedChangesModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Unsaved Changes</h3>
+            <p>You have unsaved changes. Are you sure you want to leave without saving?</p>
+            <div class="modal-actions">
+                <button type="button" id="stayButton" class="action-button">Stay on Page</button>
+                <button type="button" id="leaveButton" class="action-button danger">Leave without Saving</button>
+            </div>
+        </div>
+    </div>
 
     <script src="/js/header.js"></script>
     <script src="/js/availability.js"></script>

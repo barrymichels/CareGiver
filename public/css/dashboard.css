@@ -100,25 +100,39 @@
 .week-view {
     background-color: var(--card-bg);
     border-radius: 8px;
-    padding: 1rem;
+    padding: 0.75rem;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
 }
 
-.week-header,
-.availability-header {
-    display: flex;
-    justify-content: center;
+.week-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    margin-bottom: 1.5rem;
-    padding: 0 0.5rem;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+    padding: 0;
 }
 
-.week-title,
-.availability-title {
-    font-size: clamp(1rem, 3vw, 1.25rem);
+.week-title {
     text-align: center;
-    color: var(--text-color);
+    margin: 0;
+    grid-column: 2;
+    white-space: nowrap;
+}
+
+.availability-controls {
+    display: flex;
+    gap: 0.5rem;
+    grid-column: 1;
+    justify-self: start;
+}
+
+.week-navigation {
+    display: flex;
+    gap: 0.5rem;
+    grid-column: 3;
+    justify-self: end;
 }
 
 .schedule-grid {
@@ -350,7 +364,6 @@
 
 /* Availability Section Styles */
 .availability-section {
-    margin-top: 2rem;
     padding: 1.5rem;
     background-color: var(--card-bg);
     border-radius: 8px;
@@ -570,32 +583,32 @@
 
 /* In public/css/dashboard.css */
 .week-header {
-    padding: 1rem;
-    margin-bottom: 1rem;
-}
-
-.week-controls {
     display: grid;
-    grid-template-columns: minmax(100px, 1fr) auto minmax(100px, 1fr);
+    grid-template-columns: 1fr 1fr 1fr;
     align-items: center;
     gap: 1rem;
-    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.week-title {
+    text-align: center;
+    margin: 0;
+    grid-column: 2;
+    justify-self: center;
+}
+
+.availability-controls {
+    display: flex;
+    gap: 0.5rem;
+    grid-column: 1;
+    justify-self: start;
 }
 
 .week-navigation {
     display: flex;
     gap: 0.5rem;
-    justify-content: flex-end;
-}
-
-.week-title {
-    font-size: 1.1rem;
-    font-weight: 500;
-    color: var(--text-color);
-    white-space: nowrap;
-    margin: 0;
-    text-align: center;
-    grid-column: 2;
+    grid-column: 3;
+    justify-self: end;
 }
 
 #exportCalendar {
@@ -735,4 +748,45 @@
         width: 100%;
         justify-content: center;
     }
+}
+
+.week-controls {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+}
+
+.week-title {
+    text-align: center;
+    margin: 0;
+    grid-column: 2;
+    white-space: nowrap;
+}
+
+.availability-controls {
+    display: flex;
+    gap: 0.5rem;
+    grid-column: 1;
+    justify-self: start;
+}
+
+.week-navigation {
+    display: flex;
+    gap: 0.5rem;
+    grid-column: 3;
+    justify-self: end;
+}
+
+.availability-section {
+    padding: 1rem;
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.section-header {
+    margin-bottom: 1rem;
 }
