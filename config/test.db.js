@@ -17,6 +17,8 @@ function initializeTestDb() {
                     password TEXT,
                     is_admin BOOLEAN NOT NULL DEFAULT 0,
                     is_active BOOLEAN NOT NULL DEFAULT 0,
+                    reset_token TEXT,
+                    reset_token_expires DATETIME,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             `);

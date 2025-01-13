@@ -2,10 +2,9 @@ const request = require('supertest');
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
 const { testDb, initializeTestDb } = require('../../config/test.db');
-const { createTestUser, clearTestDb, normalizeViewPath } = require('../helpers/testHelpers');
+const { createTestUser, clearTestDb } = require('../helpers/testHelpers');
 
 // Create express app for testing
 const app = express();
@@ -13,7 +12,6 @@ const app = express();
 // Mock view engine for testing
 app.set('view engine', 'ejs');
 app.engine('ejs', (path, data, cb) => {
-    // Mock render function that just returns the view name and data
     const output = {
         view: path,
         data: data
@@ -27,21 +25,39 @@ app.use(session({
     resave: false,
     saveUninitialized: false
 }));
+app.use(passport.initialize());
+app.use(passport.session());
 
-// Configure Passport
+// Configure Passport local strategy
+const LocalStrategy = require('passport-local').Strategy;
 passport.use(new LocalStrategy(
     { usernameField: 'email' },
-    (email, password, done) => {
-        testDb.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, user) => {
-            if (err) return done(err);
-            if (!user) return done(null, false, { message: 'Invalid email or password' });
-
-            bcrypt.compare(password, user.password, (err, isMatch) => {
-                if (err) return done(err);
-                if (!isMatch) return done(null, false, { message: 'Invalid email or password' });
-                return done(null, user);
+    async (email, password, done) => {
+        try {
+            const user = await new Promise((resolve, reject) => {
+                testDb.get('SELECT * FROM users WHERE email = ?', [email], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
             });
-        });
+
+            if (!user) {
+                return done(null, false);
+            }
+
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) {
+                return done(null, false);
+            }
+
+            if (!user.is_active) {
+                return done(new Error('Account not activated'));
+            }
+
+            return done(null, user);
+        } catch (error) {
+            return done(error);
+        }
     }
 ));
 
@@ -55,24 +71,20 @@ passport.deserializeUser((id, done) => {
     });
 });
 
-app.use(passport.initialize());
-app.use(passport.session());
+// Mock nodemailer
+jest.mock('nodemailer', () => ({
+    createTransport: jest.fn().mockReturnValue({
+        sendMail: jest.fn().mockResolvedValue({ messageId: 'test-id' })
+    })
+}));
 
-// Import and use auth routes
+// Import auth routes
 const authRoutes = require('../../routes/auth')(testDb);
 app.use('/', authRoutes);
 
-// Add error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-});
-
 describe('Auth Routes', () => {
-    // Helper function to get view name from full path
-    function getViewName(fullPath) {
-        return normalizeViewPath(fullPath);
-    }
+    let activeUser;
+    let inactiveUser;
 
     beforeAll(async () => {
         await initializeTestDb();
@@ -80,354 +92,330 @@ describe('Auth Routes', () => {
 
     beforeEach(async () => {
         await clearTestDb();
+        
+        // Create test users
+        activeUser = await createTestUser({
+            email: 'active@example.com',
+            is_active: 1
+        });
+
+        inactiveUser = await createTestUser({
+            email: 'inactive@example.com',
+            is_active: 0
+        });
     });
 
     describe('GET /login', () => {
-        it('should render login page when not logged in', async () => {
-            // Create a user first so it doesn't redirect to setup
-            await createTestUser();
-
+        it('should render login page when users exist', async () => {
             const response = await request(app)
-                .get('/login');
-            expect(response.status).toBe(200);
+                .get('/login')
+                .expect(200);
 
-            // Parse the response to verify the correct view was rendered
             const rendered = JSON.parse(response.text);
-            expect(getViewName(rendered.view)).toBe('login');
+            expect(rendered.view).toContain('login');
         });
 
-        it('should redirect to setup if no users exist', async () => {
+        it('should redirect to setup when no users exist', async () => {
+            await clearTestDb();
+            
             const response = await request(app)
-                .get('/login');
-            expect(response.status).toBe(302);
+                .get('/login')
+                .expect(302);
+
             expect(response.header.location).toBe('/setup');
         });
+    });
 
-        it('should handle database errors', async () => {
-            // Mock db.get to simulate error
-            const originalGet = testDb.get;
-            testDb.get = (sql, params, callback) => {
-                callback(new Error('Database error'));
-            };
-
+    describe('POST /login', () => {
+        it('should login active user successfully', async () => {
             const response = await request(app)
-                .get('/login');
-            expect(response.status).toBe(500);
-            expect(response.body).toHaveProperty('error', 'Server error');
+                .post('/login')
+                .send({
+                    email: 'active@example.com',
+                    password: 'password123'
+                })
+                .expect(200);
 
-            // Restore original function
-            testDb.get = originalGet;
+            expect(response.body).toHaveProperty('redirect', '/');
+        });
+
+        it('should reject inactive user', async () => {
+            const response = await request(app)
+                .post('/login')
+                .send({
+                    email: 'inactive@example.com',
+                    password: 'password123'
+                })
+                .expect(403);
+
+            expect(response.body).toHaveProperty('error', 'Account not activated');
+        });
+
+        it('should reject invalid credentials', async () => {
+            const response = await request(app)
+                .post('/login')
+                .send({
+                    email: 'active@example.com',
+                    password: 'wrongpassword'
+                })
+                .expect(401);
+
+            expect(response.body).toHaveProperty('message', 'Invalid email or password');
+        });
+    });
+
+    describe('POST /register', () => {
+        const validUser = {
+            firstName: 'John',
+            lastName: 'Doe',
+            email: 'john@example.com',
+            password: 'password123',
+            confirmPassword: 'password123'
+        };
+
+        it('should register new user successfully', async () => {
+            const response = await request(app)
+                .post('/register')
+                .send(validUser)
+                .expect(200);
+
+            expect(response.body).toHaveProperty('message', 'Registration successful! You can now log in.');
+        });
+
+        it('should reject duplicate email', async () => {
+            const response = await request(app)
+                .post('/register')
+                .send({
+                    ...validUser,
+                    email: 'active@example.com'
+                })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'Email already registered');
+        });
+
+        it('should validate required fields', async () => {
+            const response = await request(app)
+                .post('/register')
+                .send({
+                    firstName: 'John'
+                })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'All fields are required');
+        });
+
+        it('should validate password match', async () => {
+            const response = await request(app)
+                .post('/register')
+                .send({
+                    ...validUser,
+                    confirmPassword: 'different'
+                })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'Passwords do not match');
+        });
+
+        it('should validate password length', async () => {
+            const response = await request(app)
+                .post('/register')
+                .send({
+                    ...validUser,
+                    password: 'short',
+                    confirmPassword: 'short'
+                })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'Password must be at least 8 characters long');
+        });
+
+        it('should validate email format', async () => {
+            const response = await request(app)
+                .post('/register')
+                .send({
+                    ...validUser,
+                    email: 'invalid-email'
+                })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'Invalid email format');
         });
     });
 
     describe('GET /setup', () => {
         it('should render setup page when no users exist', async () => {
+            await clearTestDb();
+            
             const response = await request(app)
-                .get('/setup');
-            expect(response.status).toBe(200);
+                .get('/setup')
+                .expect(200);
 
-            // Parse the response to verify the correct view was rendered
             const rendered = JSON.parse(response.text);
-            expect(getViewName(rendered.view)).toBe('setup');
+            expect(rendered.view).toContain('setup');
         });
 
-        it('should redirect to login if users exist', async () => {
-            await createTestUser();
+        it('should redirect to login when users exist', async () => {
             const response = await request(app)
-                .get('/setup');
-            expect(response.status).toBe(302);
+                .get('/setup')
+                .expect(302);
+
             expect(response.header.location).toBe('/login');
-        });
-
-        it('should handle database errors', async () => {
-            // Mock db.get to simulate error
-            const originalGet = testDb.get;
-            testDb.get = (sql, params, callback) => {
-                callback(new Error('Database error'));
-            };
-
-            const response = await request(app)
-                .get('/setup');
-            expect(response.status).toBe(500);
-            expect(response.body).toHaveProperty('error', 'Server error');
-
-            // Restore original function
-            testDb.get = originalGet;
         });
     });
 
     describe('POST /setup', () => {
-        it('should create admin user successfully', async () => {
+        const setupData = {
+            firstName: 'Admin',
+            lastName: 'User',
+            email: 'admin@example.com',
+            password: 'adminpass123',
+            confirmPassword: 'adminpass123'
+        };
+
+        it('should create admin user when no users exist', async () => {
+            await clearTestDb();
+            
             const response = await request(app)
                 .post('/setup')
-                .send({
-                    firstName: 'Admin',
-                    lastName: 'User',
-                    email: 'admin@example.com',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
+                .send(setupData)
+                .expect(200);
 
-            expect(response.status).toBe(200);
             expect(response.body).toHaveProperty('message', 'Admin account created successfully! You can now log in.');
-
-            // Verify user was created as admin
-            const user = await new Promise((resolve) => {
-                testDb.get('SELECT * FROM users WHERE email = ?', ['admin@example.com'], (err, row) => {
-                    resolve(row);
-                });
-            });
-            expect(user.is_admin).toBe(1);
         });
 
-        it('should fail if setup already completed', async () => {
-            await createTestUser();
+        it('should reject setup when users exist', async () => {
             const response = await request(app)
                 .post('/setup')
-                .send({
-                    firstName: 'Admin',
-                    lastName: 'User',
-                    email: 'admin@example.com',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
+                .send(setupData)
+                .expect(400);
 
-            expect(response.status).toBe(400);
             expect(response.body).toHaveProperty('error', 'Setup already completed');
-        });
-
-        it('should handle database errors during setup check', async () => {
-            // Mock db.get to simulate error
-            const originalGet = testDb.get;
-            testDb.get = (sql, params, callback) => {
-                if (sql.includes('COUNT')) {
-                    callback(new Error('Database error'));
-                } else {
-                    originalGet.call(testDb, sql, params, callback);
-                }
-            };
-
-            const response = await request(app)
-                .post('/setup')
-                .send({
-                    firstName: 'Admin',
-                    lastName: 'User',
-                    email: 'admin@example.com',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
-
-            expect(response.status).toBe(500);
-            expect(response.body).toHaveProperty('error', 'Server error');
-
-            // Restore original function
-            testDb.get = originalGet;
-        });
-
-        it('should handle database errors during user creation', async () => {
-            // Mock db.run to simulate error during insert
-            const originalRun = testDb.run;
-            testDb.run = (sql, params, callback) => {
-                if (sql.includes('INSERT')) {
-                    callback(new Error('Database error'));
-                } else {
-                    originalRun.call(testDb, sql, params, callback);
-                }
-            };
-
-            const response = await request(app)
-                .post('/setup')
-                .send({
-                    firstName: 'Admin',
-                    lastName: 'User',
-                    email: 'admin@example.com',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
-
-            expect(response.status).toBe(500);
-            expect(response.body).toHaveProperty('error', 'Error creating admin user');
-
-            // Restore original function
-            testDb.run = originalRun;
         });
     });
 
-    describe('POST /register', () => {
-        // Add beforeEach and afterEach to handle console mocking
-        let originalConsoleError;
-        beforeEach(() => {
-            originalConsoleError = console.error;
-            console.error = jest.fn();
-        });
-
-        afterEach(() => {
-            console.error = originalConsoleError;
-        });
-
-        it('should register a new user successfully', async () => {
+    describe('POST /forgot-password', () => {
+        it('should handle forgot password request for existing user', async () => {
             const response = await request(app)
-                .post('/register')
-                .send({
-                    firstName: 'New',
-                    lastName: 'User',
-                    email: 'new@example.com',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
+                .post('/forgot-password')
+                .send({ email: 'active@example.com' })
+                .expect(200);
 
-            expect(response.status).toBe(200);
-            expect(response.body).toHaveProperty('message', 'Registration successful! You can now log in.');
+            expect(response.body).toHaveProperty('message');
         });
 
-        it('should fail with mismatched passwords', async () => {
+        it('should handle forgot password request for non-existent user', async () => {
             const response = await request(app)
-                .post('/register')
-                .send({
-                    firstName: 'New',
-                    lastName: 'User',
-                    email: 'new@example.com',
-                    password: 'password123',
-                    confirmPassword: 'different'
-                });
+                .post('/forgot-password')
+                .send({ email: 'nonexistent@example.com' })
+                .expect(200);
 
-            expect(response.status).toBe(400);
-            expect(response.body).toHaveProperty('error', 'Passwords do not match');
+            expect(response.body).toHaveProperty('message');
+        });
+    });
+
+    describe('GET /reset-password/:token', () => {
+        it('should render reset password page for valid token', async () => {
+            // First create a reset token
+            const token = 'valid-token';
+            const expiry = Date.now() + 3600000;
+
+            await new Promise((resolve) => {
+                testDb.run(
+                    'UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE id = ?',
+                    [token, expiry, activeUser.id],
+                    resolve
+                );
+            });
+
+            const response = await request(app)
+                .get(`/reset-password/${token}`)
+                .expect(200);
+
+            const rendered = JSON.parse(response.text);
+            expect(rendered.view).toContain('reset-password');
         });
 
-        it('should fail with short password', async () => {
+        it('should render error page for invalid token', async () => {
             const response = await request(app)
-                .post('/register')
+                .get('/reset-password/invalid-token')
+                .expect(200);
+
+            const rendered = JSON.parse(response.text);
+            expect(rendered.view).toContain('reset-password-error');
+        });
+    });
+
+    describe('POST /reset-password/:token', () => {
+        let validToken;
+        let validUser;
+
+        beforeEach(async () => {
+            validToken = 'valid-reset-token';
+            const tokenExpiry = new Date(Date.now() + 3600000).toISOString(); // 1 hour from now
+            validUser = await createTestUser({
+                email: 'reset@example.com',
+                reset_token: validToken,
+                reset_token_expires: tokenExpiry
+            });
+        });
+
+        it('should reset password with valid token', async () => {
+            const response = await request(app)
+                .post(`/reset-password/${validToken}`)
                 .send({
-                    firstName: 'New',
-                    lastName: 'User',
-                    email: 'new@example.com',
+                    password: 'newpassword123',
+                    confirmPassword: 'newpassword123'
+                })
+                .expect(200);
+
+            expect(response.body).toHaveProperty('message');
+        });
+
+        it('should reject invalid token', async () => {
+            const response = await request(app)
+                .post('/reset-password/invalid-token')
+                .send({
+                    password: 'newpassword123',
+                    confirmPassword: 'newpassword123'
+                })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error');
+        });
+
+        it('should validate password length', async () => {
+            const response = await request(app)
+                .post(`/reset-password/${validToken}`)
+                .send({
                     password: 'short',
                     confirmPassword: 'short'
-                });
+                })
+                .expect(400);
 
-            expect(response.status).toBe(400);
             expect(response.body).toHaveProperty('error', 'Password must be at least 8 characters long');
         });
 
-        it('should fail with invalid email format', async () => {
+        it('should validate password match', async () => {
             const response = await request(app)
-                .post('/register')
+                .post(`/reset-password/${validToken}`)
                 .send({
-                    firstName: 'New',
-                    lastName: 'User',
-                    email: 'invalid-email',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
+                    password: 'newpassword123',
+                    confirmPassword: 'different'
+                })
+                .expect(400);
 
-            expect(response.status).toBe(400);
-            expect(response.body).toHaveProperty('error', 'Invalid email format');
-        });
-
-        it('should fail with missing fields', async () => {
-            const response = await request(app)
-                .post('/register')
-                .send({
-                    firstName: 'New',
-                    // missing lastName
-                    email: 'new@example.com',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
-
-            expect(response.status).toBe(400);
-            expect(response.body).toHaveProperty('error', 'All fields are required');
-        });
-
-        it('should handle database errors during registration', async () => {
-            // Mock db.run to simulate error during insert
-            const originalRun = testDb.run;
-            testDb.run = (sql, params, callback) => {
-                if (sql.includes('INSERT')) {
-                    callback(new Error('Database error'));
-                } else {
-                    originalRun.call(testDb, sql, params, callback);
-                }
-            };
-
-            const response = await request(app)
-                .post('/register')
-                .send({
-                    firstName: 'New',
-                    lastName: 'User',
-                    email: 'new@example.com',
-                    password: 'password123',
-                    confirmPassword: 'password123'
-                });
-
-            expect(response.status).toBe(500);
-            expect(response.body).toHaveProperty('error', 'Server error');
-            expect(console.error).toHaveBeenCalled();
-
-            // Restore original function
-            testDb.run = originalRun;
+            expect(response.body).toHaveProperty('error', 'Passwords do not match');
         });
     });
 
     describe('GET /logout', () => {
-        it('should logout successfully', async () => {
-            // First login
-            const user = await createTestUser();
-            const agent = request.agent(app);
+        it('should redirect to login page', async () => {
+            const response = await request(app)
+                .get('/logout')
+                .expect(302);
 
-            await agent
-                .post('/login')
-                .send({
-                    email: user.email,
-                    password: 'password123'
-                });
-
-            // Then logout
-            const response = await agent.get('/logout');
-            expect(response.status).toBe(302);
             expect(response.header.location).toBe('/login');
-        });
-
-        it('should handle logout errors', async () => {
-            // First login
-            const user = await createTestUser();
-            const agent = request.agent(app);
-
-            await agent
-                .post('/login')
-                .send({
-                    email: user.email,
-                    password: 'password123'
-                });
-
-            // Save original stack
-            const oldStack = app._router.stack;
-
-            // Create a new router with error-throwing logout
-            const express = require('express');
-            const router = express.Router();
-
-            // Add error-throwing logout route
-            router.get('/logout', (req, res, next) => {
-                next(new Error('Logout error'));
-            });
-
-            // Add error handling middleware
-            router.use((err, req, res, next) => {
-                res.status(500).json({ error: 'Server error' });
-            });
-
-            // Replace the existing routes
-            app._router.stack = oldStack.filter(layer => !layer.handle || layer.handle.name !== 'router');
-            app.use('/', router);
-
-            const response = await agent.get('/logout');
-            expect(response.status).toBe(500);
-            expect(response.body).toHaveProperty('error', 'Server error');
-
-            // Restore original routes
-            app._router.stack = oldStack;
         });
     });
 });

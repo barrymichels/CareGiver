@@ -32,9 +32,9 @@ async function createTestUser(userData = {}) {
     try {
         const result = await new Promise((resolve, reject) => {
             testDb.run(
-                `INSERT INTO users (first_name, last_name, email, password, is_admin, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [user.first_name, user.last_name, user.email, user.password, user.is_admin, user.is_active],
+                `INSERT INTO users (first_name, last_name, email, password, is_admin, is_active, reset_token, reset_token_expires)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [user.first_name, user.last_name, user.email, user.password, user.is_admin, user.is_active, user.reset_token || null, user.reset_token_expires || null],
                 function (err) {
                     if (err) reject(err);
                     resolve({ ...user, id: this.lastID });

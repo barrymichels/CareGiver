@@ -49,7 +49,8 @@ module.exports = function (db) {
     // Login submission
     router.post('/login',
         passport.authenticate('local', {
-            failWithError: true
+            failWithError: true,
+            failureMessage: true
         }),
         (req, res) => {
             // Check if user is active
@@ -63,7 +64,11 @@ module.exports = function (db) {
         },
         (err, req, res, next) => {
             console.error('Login error:', err);
-            res.status(401).json({ message: 'Invalid email or password' });
+            if (err.message === 'Account not activated') {
+                res.status(403).json({ error: 'Account not activated' });
+            } else {
+                res.status(401).json({ message: 'Invalid email or password' });
+            }
         }
     );
 
@@ -239,7 +244,7 @@ module.exports = function (db) {
 
                 await new Promise((resolve, reject) => {
                     db.run(
-                        'UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE id = ?',
+                        'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
                         [resetToken, resetTokenExpiry, user.id],
                         err => {
                             if (err) reject(err);
@@ -288,7 +293,7 @@ module.exports = function (db) {
             // Check if token exists and is not expired
             const user = await new Promise((resolve, reject) => {
                 db.get(
-                    'SELECT id FROM users WHERE reset_token = ? AND reset_token_expiry > ?',
+                    'SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > ?',
                     [token, Date.now()],
                     (err, row) => {
                         if (err) reject(err);
@@ -340,7 +345,7 @@ module.exports = function (db) {
             // Check if token exists and is not expired
             const user = await new Promise((resolve, reject) => {
                 db.get(
-                    'SELECT id FROM users WHERE reset_token = ? AND reset_token_expiry > ?',
+                    'SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > ?',
                     [token, Date.now()],
                     (err, row) => {
                         if (err) reject(err);
@@ -357,7 +362,7 @@ module.exports = function (db) {
             const hashedPassword = await bcrypt.hash(password, 10);
             await new Promise((resolve, reject) => {
                 db.run(
-                    'UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL WHERE id = ?',
+                    'UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
                     [hashedPassword, user.id],
                     (err) => {
                         if (err) reject(err);
