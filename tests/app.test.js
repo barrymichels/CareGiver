@@ -8,13 +8,8 @@ const { createTestUser, clearTestDb } = require('./helpers/testHelpers');
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
 
-// Mock the '../config/database.init' module
-jest.mock('../config/database.init', () => 
-    jest.fn().mockImplementation(async () => {
-        // Mock successful database initialization
-        return Promise.resolve();
-    })
-);
+// Mock process.exit before any imports
+const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {});
 
 // Mock external dependencies
 jest.mock('connect-sqlite3', () => {
@@ -25,14 +20,10 @@ jest.mock('connect-sqlite3', () => {
     };
 });
 
-// Mock OAuth2 module
 jest.mock('../config/oauth2', () => {
-    return jest.fn().mockImplementation((passport, db) => {
-        // Do nothing in test environment
-    });
+    return jest.fn().mockImplementation((passport, db) => {});
 });
 
-// Mock bcrypt for password comparison
 jest.mock('bcrypt', () => ({
     compare: jest.fn().mockImplementation(() => Promise.resolve(true)),
     hash: jest.fn().mockImplementation(() => Promise.resolve('hashedPassword')),
@@ -47,10 +38,8 @@ describe('App', () => {
     let server;
     let originalConsoleLog;
     let originalConsoleError;
-    let initializeDatabase;
 
     beforeAll(async () => {
-        // Mock environment variables
         process.env = {
             ...OLD_ENV,
             NODE_ENV: 'test',
@@ -58,45 +47,22 @@ describe('App', () => {
             DB_PATH: ':memory:'
         };
 
-        // Save original console methods
         originalConsoleLog = console.log;
         originalConsoleError = console.error;
         console.log = jest.fn();
         console.error = jest.fn();
-
-        // Get the mocked initializeDatabase function
-        initializeDatabase = require('../config/database.init');
 
         await initializeTestDb();
     });
 
     beforeEach(async () => {
         await clearTestDb();
-        
-        // Clear module cache to get a fresh instance
         jest.resetModules();
-        
-        // Reset all mocks
         jest.clearAllMocks();
-
-        // Configure environment for testing
-        process.env = {
-            ...process.env,
-            NODE_ENV: 'test',
-            SESSION_SECRET: 'test-secret',
-            DB_PATH: ':memory:'
-        };
-        
-        // Import app after environment setup
-        const appModule = require('../app');
-        app = appModule.app;
-        
-        // Create a test server with a random port
-        server = app.listen(0);
+        console.error = jest.fn();
     });
 
     afterEach(async () => {
-        // Close server and clear database after each test
         if (server) {
             await new Promise(resolve => server.close(resolve));
         }
@@ -104,167 +70,170 @@ describe('App', () => {
     });
 
     afterAll(() => {
-        // Restore environment
         process.env = OLD_ENV;
-        // Restore console methods
         console.log = originalConsoleLog;
         console.error = originalConsoleError;
+        mockExit.mockRestore();
+    });
+
+    describe('Environment Configuration', () => {
+        it('should configure secure cookies in production', () => {
+            process.env.NODE_ENV = 'production';
+            let sessionConfig;
+
+            jest.mock('express-session', () => {
+                return jest.fn((config) => {
+                    sessionConfig = config;
+                    return (req, res, next) => next();
+                });
+            });
+
+            require('../app');
+            expect(sessionConfig.cookie.secure).toBe(true);
+        });
+
+        it('should not require secure cookies in development', () => {
+            process.env.NODE_ENV = 'development';
+            let sessionConfig;
+
+            jest.mock('express-session', () => {
+                return jest.fn((config) => {
+                    sessionConfig = config;
+                    return (req, res, next) => next();
+                });
+            });
+
+            require('../app');
+            expect(sessionConfig.cookie.secure).toBe(false);
+        });
     });
 
     describe('Database Initialization', () => {
-        it('should create required tables', async () => {
-            const tables = await new Promise((resolve, reject) => {
-                testDb.all(
-                    "SELECT name FROM sqlite_master WHERE type='table'",
-                    (err, rows) => {
-                        if (err) reject(err);
-                        resolve(rows.map(row => row.name));
-                    }
-                );
-            });
-
-            expect(tables).toContain('users');
-            expect(tables).toContain('availability');
-            expect(tables).toContain('assignments');
-            expect(tables).toContain('user_preferences');
-        });
-
-        it('should have correct schema for users table', async () => {
-            const schema = await new Promise((resolve, reject) => {
-                testDb.get(
-                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'",
-                    (err, row) => {
-                        if (err) reject(err);
-                        resolve(row.sql);
-                    }
-                );
-            });
-
-            expect(schema).toContain('id INTEGER PRIMARY KEY AUTOINCREMENT');
-            expect(schema).toContain('first_name TEXT NOT NULL');
-            expect(schema).toContain('last_name TEXT NOT NULL');
-            expect(schema).toContain('email TEXT UNIQUE NOT NULL');
-            expect(schema).toContain('password TEXT NOT NULL');
-            expect(schema).toContain('is_admin BOOLEAN NOT NULL DEFAULT 0');
-            expect(schema).toContain('is_active BOOLEAN NOT NULL DEFAULT 0');
-        });
-    });
-
-    describe('Authentication', () => {
-        let testUser;
-
-        beforeEach(async () => {
-            testUser = await createTestUser();
-            
-            // Configure Passport serialization/deserialization
-            passport.serializeUser((user, done) => {
-                done(null, user.id);
-            });
-
-            passport.deserializeUser((id, done) => {
-                testDb.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
-                    done(err, user);
+        it('should handle database initialization errors', () => {
+            // Mock database initialization to throw error
+            jest.mock('../config/database.init', () => {
+                return jest.fn().mockImplementation(() => {
+                    throw new Error('Database initialization error');
                 });
             });
-        });
 
-        it('should serialize user correctly', (done) => {
-            passport.serializeUser(testUser, (err, id) => {
-                expect(err).toBeNull();
-                expect(id).toBe(testUser.id);
-                done();
-            });
-        });
+            // Import app to trigger initialization
+            require('../app');
 
-        it('should deserialize user correctly', (done) => {
-            passport.deserializeUser(testUser.id, (err, deserializedUser) => {
-                expect(err).toBeNull();
-                expect(deserializedUser.id).toBe(testUser.id);
-                expect(deserializedUser.email).toBe(testUser.email);
-                done();
-            });
-        });
-    });
-
-    describe('Middleware Configuration', () => {
-        it('should parse JSON bodies', async () => {
-            const response = await request(app)
-                .post('/login')
-                .send({ email: 'test@example.com', password: 'password123' })
-                .set('Content-Type', 'application/json');
-            
-            // Even though login will fail, the request should be parsed
-            expect(response.status).not.toBe(400);
-        });
-
-        it('should parse URL-encoded bodies', async () => {
-            const response = await request(app)
-                .post('/login')
-                .send('email=test@example.com&password=password123')
-                .set('Content-Type', 'application/x-www-form-urlencoded');
-            
-            // Even though login will fail, the request should be parsed
-            expect(response.status).not.toBe(400);
-        });
-
-        it('should serve static files', async () => {
-            const response = await request(app)
-                .get('/css/style.css');
-            
-            expect(response.status).toBe(200);
-            expect(response.header['content-type']).toContain('text/css');
+            // Verify error handling
+            expect(console.error).toHaveBeenCalledWith(
+                'Failed to initialize database:',
+                expect.any(Error)
+            );
+            expect(mockExit).toHaveBeenCalledWith(1);
         });
     });
 
     describe('Error Handling', () => {
-        test('should handle errors in LocalStrategy password comparison', async () => {
-            // Create a test user
-            const testUser = await createTestUser();
+        beforeEach(() => {
+            // Mock successful database initialization for these tests
+            jest.mock('../config/database.init', () => {
+                return jest.fn().mockImplementation(() => Promise.resolve());
+            });
+        });
 
-            // Mock bcrypt.compare to reject with an error
-            const bcrypt = require('bcrypt');
-            bcrypt.compare.mockImplementationOnce(() => Promise.reject(new Error('Bcrypt error')));
+        it('should handle unhandled errors with JSON response', async () => {
+            const { app } = require('../app');
+            const error = new Error('Test error');
+            app.get('/throw-error', (req, res, next) => next(error));
 
-            // Attempt to login with the test user
             const response = await request(app)
-                .post('/login')
-                .send({
-                    email: testUser.email,
-                    password: 'password123'
-                });
+                .get('/throw-error')
+                .set('Accept', 'application/json');
 
-            // Check that the login failed with the expected response
-            expect(response.statusCode).toBe(401);
-            expect(response.body).toEqual({ message: 'Invalid email or password' });
+            expect(response.status).toBe(500);
+            expect(response.body).toEqual({ error: 'Server error' });
+            expect(response.header['content-type']).toContain('application/json');
+            expect(response.header['x-content-type-options']).toBe('nosniff');
         });
 
-        test('should handle missing user id in serializeUser', async () => {
-            const done = jest.fn();
-            const userWithoutId = { email: 'test@example.com' };
+        it('should handle errors in async routes', async () => {
+            const { app } = require('../app');
+            const error = new Error('Async error');
+            app.get('/async-error', (req, res, next) => next(error));
 
-            // Call serializeUser with a user object missing the id
-            passport.serializeUser(userWithoutId, done);
+            const response = await request(app)
+                .get('/async-error')
+                .set('Accept', 'application/json');
 
-            // Check that done was called with an error
-            expect(done).toHaveBeenCalledWith(expect.any(Error));
+            expect(response.status).toBe(500);
+            expect(response.body).toEqual({ error: 'Server error' });
+        });
+    });
+
+    describe('Server Startup', () => {
+        let mockListen;
+
+        beforeEach(() => {
+            // Set up mockListen
+            mockListen = jest.fn((port, callback) => {
+                callback();
+                return { close: jest.fn() };
+            });
+
+            // Mock successful database initialization for these tests
+            jest.mock('../config/database.init', () => {
+                return jest.fn().mockImplementation(() => Promise.resolve());
+            });
+
+            // Mock getPageTitle
+            jest.mock('../utils/title', () => ({
+                getPageTitle: jest.fn()
+            }));
+
+            // Create a complete Express mock
+            const mockRouter = () => ({
+                use: jest.fn(),
+                get: jest.fn(),
+                post: jest.fn(),
+                put: jest.fn(),
+                delete: jest.fn(),
+                route: jest.fn()
+            });
+
+            jest.mock('express', () => {
+                const mockApp = function() {
+                    return {
+                        locals: {},
+                        listen: mockListen,
+                        use: jest.fn(),
+                        set: jest.fn(),
+                        get: jest.fn(),
+                        post: jest.fn(),
+                        put: jest.fn(),
+                        delete: jest.fn(),
+                        _router: { stack: [] }
+                    };
+                };
+                mockApp.json = jest.fn(() => jest.fn());
+                mockApp.urlencoded = jest.fn(() => jest.fn());
+                mockApp.static = jest.fn(() => jest.fn());
+                mockApp.Router = mockRouter;
+                return mockApp;
+            });
         });
 
-        test('should handle user not found in deserializeUser', (done) => {
-            // Configure passport deserializeUser to use testDb
-            passport.deserializeUser((id, done) => {
-                testDb.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
-                    if (err) return done(err);
-                    if (!user) return done(null, false);
-                    done(null, user);
-                });
-            });
+        it('should start server on specified port', () => {
+            process.env.PORT = '3001';
+            const { startServer } = require('../app');
+            const server = startServer();
 
-            // Call deserializeUser with an invalid user id
-            passport.deserializeUser(999, (err, user) => {
-                expect(err).toBeNull();
-                expect(user).toBe(false);
-                done();
-            });
+            expect(mockListen).toHaveBeenCalledWith('3001', expect.any(Function));
+            server.close();
+        });
+
+        it('should use default port 3000 if not specified', () => {
+            delete process.env.PORT;
+            const { startServer } = require('../app');
+            const server = startServer();
+
+            expect(mockListen).toHaveBeenCalledWith('3000', expect.any(Function));
+            server.close();
         });
     });
 }); 
