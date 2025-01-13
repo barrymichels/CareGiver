@@ -9,10 +9,34 @@ module.exports = function(db) {
     // Get user's availability
     router.get('/', isAuthenticated, isActive, async (req, res) => {
         try {
+            const weekOffset = parseInt(req.query.weekOffset) || 0;
+            console.log('Week offset:', weekOffset);
+            
+            // Limit week offset between -1 (this week) and 0 (next week)
+            const limitedOffset = Math.max(-1, Math.min(0, weekOffset));
+            console.log('Limited offset:', limitedOffset);
+
+            // Calculate the start of the target week
+            const today = new Date();
+            const targetWeekStart = new Date(today);
+            targetWeekStart.setDate(today.getDate() + (8 - today.getDay()) + (limitedOffset * 7));
+            console.log('Target week start:', targetWeekStart);
+
+            // Format week title
+            const weekTitle = limitedOffset === 0 ? 'Next Week' : 'This Week';
+            console.log('Week title:', weekTitle);
+
             const availability = await new Promise((resolve, reject) => {
                 db.all(
-                    'SELECT user_id, day_date, time_slot, is_available FROM availability WHERE user_id = ?',
-                    [req.user.id],
+                    `SELECT user_id, day_date, time_slot, is_available 
+                     FROM availability 
+                     WHERE user_id = ? 
+                     AND day_date BETWEEN ? AND ?`,
+                    [
+                        req.user.id,
+                        targetWeekStart.toISOString().split('T')[0],
+                        new Date(targetWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                    ],
                     (err, rows) => {
                         if (err) reject(err);
                         // Convert SQLite integer to boolean
@@ -24,9 +48,33 @@ module.exports = function(db) {
                     }
                 );
             });
-            res.json(availability);
+            console.log('User availability:', availability);
+
+            // Get time slots
+            const timeSlots = [
+                { time: '8:00am', label: 'Morning' },
+                { time: '12:30pm', label: 'Afternoon' },
+                { time: '5:00pm', label: 'Evening' },
+                { time: '9:30pm', label: 'Night' }
+            ];
+            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+            console.log('Rendering availability view');
+            res.render('availability', {
+                user: req.user,
+                userAvailability: availability,
+                timeSlots,
+                days,
+                weekOffset: limitedOffset,
+                weekTitle,
+                weekStart: targetWeekStart
+            });
         } catch (error) {
-            res.status(500).json({ error: 'Server error' });
+            console.error('Error loading availability:', error);
+            res.status(500).render('error', { 
+                message: 'Server error',
+                user: req.user || {} 
+            });
         }
     });
 

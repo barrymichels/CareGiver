@@ -121,6 +121,11 @@ app.get('/inactive', isAuthenticated, (req, res) => {
   res.render('inactive');
 });
 
+// Add test route for rendering error view
+app.get('/test-error', (req, res) => {
+  res.render('error', { message: 'Test error' });
+});
+
 // Error handling middleware - MUST be after all routes
 app.use((err, req, res, next) => {
   console.error('Unhandled error caught by middleware:', err);

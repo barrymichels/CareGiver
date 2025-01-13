@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title><%= getPageTitle('My Availability') %></title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/header.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+    <%- include('partials/header', { user }) %>
+    
+    <main class="dashboard-content">
+        <div class="week-view">
+            <div class="week-header">
+                <div class="week-controls">
+                    <h2 class="week-title">My Availability for <%= weekTitle %></h2>
+                    
+                    <div class="week-navigation">
+                        <% if (weekOffset > -1) { %>
+                            <a href="/availability?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
+                                &larr; Previous
+                            </a>
+                        <% } %>
+                        
+                        <% if (weekOffset < 0) { %>
+                            <a href="/availability?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
+                                Next &rarr;
+                            </a>
+                        <% } %>
+                    </div>
+                </div>
+            </div>
+
+            <%- include('partials/availability-manager', { 
+                days,
+                timeSlots,
+                userAvailability,
+                customTitle: `My Availability for ${weekTitle}`,
+                weekStart
+            }) %>
+        </div>
+    </main>
+
+    <script src="/js/header.js"></script>
+    <script src="/js/availability.js"></script>
+</body>
+</html> 

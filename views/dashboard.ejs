@@ -106,19 +106,11 @@
                 <% }) %>
             </div>
         </div>
-
-        <%- include('partials/availability-manager', { 
-            days,
-            timeSlots,
-            userAvailability,
-            customTitle: 'My Availability for Next Week'
-        }) %>
     </main>
 
     <%- include('partials/unsaved-changes-modal') %>
 
     <script src="/js/header.js"></script>
-    <script src="/js/availability.js"></script>
     <script src="/js/dashboard.js"></script>
     <script>
       if ('serviceWorker' in navigator) {

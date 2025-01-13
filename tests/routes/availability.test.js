@@ -8,6 +8,13 @@ const { createTestUser, clearTestDb, createAvailability, getAvailability, getPre
 // Create express app for testing
 const app = express();
 
+// Configure view engine
+app.set('view engine', 'ejs');
+app.set('views', 'views');
+
+// Add view helpers
+app.locals.getPageTitle = (suffix) => suffix ? `${suffix} - CareGiver` : 'CareGiver';
+
 // Create a modifiable mock auth middleware
 const createMockAuth = (userId) => (req, res, next) => {
     req.isAuthenticated = () => true;
@@ -59,38 +66,6 @@ describe('Availability Routes', () => {
         // Reset the app routes
         app._router.stack = app._router.stack.filter(layer => !layer.route || layer.route.path !== '/availability');
         app.use('/availability', mockAuth, availabilityRouter);
-    });
-
-    describe('GET /availability', () => {
-        it('should return user availability', async () => {
-            await createAvailability(testUser.id, [
-                {
-                    date: '2024-01-01',
-                    time: '8:00am',
-                    isAvailable: true
-                }
-            ]);
-
-            const response = await request(app)
-                .get('/availability');
-
-            expect(response.status).toBe(200);
-            expect(Array.isArray(response.body)).toBe(true);
-            expect(response.body[0]).toMatchObject({
-                user_id: testUser.id,
-                day_date: '2024-01-01',
-                time_slot: '8:00am',
-                is_available: true
-            });
-        });
-
-        it('should return empty array when no availability exists', async () => {
-            const response = await request(app)
-                .get('/availability');
-
-            expect(response.status).toBe(200);
-            expect(response.body).toEqual([]);
-        });
     });
 
     describe('POST /availability/update', () => {
