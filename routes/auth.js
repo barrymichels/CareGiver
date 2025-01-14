@@ -56,7 +56,7 @@ module.exports = function (db) {
             // Check if user is active
             if (!req.user.is_active) {
                 req.logout(() => {
-                    res.status(403).json({ error: 'Account not activated' });
+                    res.redirect('/inactive');
                 });
                 return;
             }
@@ -65,7 +65,7 @@ module.exports = function (db) {
         (err, req, res, next) => {
             console.error('Login error:', err);
             if (err.message === 'Account not activated') {
-                res.status(403).json({ error: 'Account not activated' });
+                res.redirect('/inactive');
             } else {
                 res.status(401).json({ message: 'Invalid email or password' });
             }
@@ -218,70 +218,52 @@ module.exports = function (db) {
     });
 
     router.post('/forgot-password', async (req, res) => {
-        const { email } = req.body;
-
         try {
+            const { email } = req.body;
+
+            // Find user
             const user = await new Promise((resolve, reject) => {
-                db.get(
-                    'SELECT id, email, first_name FROM users WHERE email = ? AND is_active = 1',
-                    [email.toLowerCase()],
-                    (err, row) => {
+                db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+
+            if (!user) {
+                return res.status(400).json({ error: 'No account found with that email address' });
+            }
+
+            // Generate reset token
+            const token = crypto.randomBytes(32).toString('hex');
+            const expires = Date.now() + 3600000; // 1 hour
+
+            // Save token to database
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+                    [token, expires, user.id],
+                    (err) => {
                         if (err) reject(err);
-                        resolve(row);
+                        resolve();
                     }
                 );
             });
 
-            // Send response before attempting email
-            res.json({
-                message: 'If this email is registered, you will receive password reset instructions shortly.'
-            });
-
-            // Only attempt to send email if user exists
-            if (user) {
-                const resetToken = crypto.randomBytes(32).toString('hex');
-                const resetTokenExpiry = Date.now() + 3600000; // 1 hour
-
-                await new Promise((resolve, reject) => {
-                    db.run(
-                        'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
-                        [resetToken, resetTokenExpiry, user.id],
-                        err => {
-                            if (err) reject(err);
-                            resolve();
-                        }
-                    );
+            // Send email
+            const transporter = createTransporter();
+            try {
+                await transporter.sendMail({
+                    to: user.email,
+                    subject: 'Password Reset',
+                    text: `Click here to reset your password: ${process.env.BASE_URL}/reset-password/${token}`
                 });
-
-                try {
-                    const transporter = createTransporter();
-                    const resetUrl = `${process.env.APP_URL}/reset-password/${resetToken}`;
-
-                    await transporter.sendMail({
-                        from: process.env.SMTP_FROM,
-                        to: user.email,
-                        subject: "Password Reset Request",
-                        html: `
-                            <p>Hello ${user.first_name},</p>
-                            <p>You requested to reset your password. Click the link below to reset it:</p>
-                            <p><a href="${resetUrl}">${resetUrl}</a></p>
-                            <p>This link will expire in 1 hour.</p>
-                            <p>If you didn't request this, please ignore this email.</p>
-                        `
-                    });
-                } catch (emailError) {
-                    console.error('Email sending failed:', emailError);
-                    // Don't throw - we already sent success response to user
-                }
+                res.json({ message: 'Password reset email sent' });
+            } catch (emailError) {
+                // If email fails, return error
+                res.status(500).json({ error: 'Error sending password reset email' });
             }
         } catch (error) {
-            // Only send error if headers haven't been sent
-            if (!res.headersSent) {
-                console.error('Forgot password error:', error);
-                res.status(500).json({
-                    message: 'If this email is registered, you will receive password reset instructions shortly.'
-                });
-            }
+            res.status(500).json({ error: 'Server error' });
         }
     });
 
@@ -303,7 +285,6 @@ module.exports = function (db) {
             });
 
             if (!user) {
-                // Render error page without header for invalid token
                 return res.render('reset-password-error', {
                     message: 'Password reset link is invalid or has expired.',
                     action: {
@@ -313,11 +294,8 @@ module.exports = function (db) {
                 });
             }
 
-            // Token valid, show reset password form
             res.render('reset-password', { token });
-
         } catch (error) {
-            console.error('Reset password error:', error);
             res.render('reset-password-error', {
                 message: 'An error occurred while processing your request.',
                 action: {
