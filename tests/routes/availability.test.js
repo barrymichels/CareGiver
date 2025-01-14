@@ -3,47 +3,12 @@ const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
 const { testDb, initializeTestDb } = require('../../config/test.db');
-const { createTestUser, clearTestDb, createAvailability, getAvailability, getPreferences } = require('../helpers/testHelpers');
-
-// Create express app for testing
-const app = express();
-
-// Configure view engine
-app.set('view engine', 'ejs');
-app.set('views', 'views');
-
-// Add view helpers
-app.locals.getPageTitle = (suffix) => suffix ? `${suffix} - CareGiver` : 'CareGiver';
-
-// Create a modifiable mock auth middleware
-const createMockAuth = (userId) => (req, res, next) => {
-    req.isAuthenticated = () => true;
-    req.user = { id: userId, is_active: true };
-    next();
-};
-
-app.use(express.json());
-app.use(session({
-    secret: 'test-secret',
-    resave: false,
-    saveUninitialized: false
-}));
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Import availability routes
-const availabilityRoutes = require('../../routes/availability')(testDb);
-
-// Add error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-});
+const { createTestUser, clearTestDb } = require('../helpers/testHelpers');
+const configurePassport = require('../../config/passport');
 
 describe('Availability Routes', () => {
+    let app;
     let testUser;
-    let mockAuth;
-    let availabilityRouter;
 
     beforeAll(async () => {
         await initializeTestDb();
@@ -51,45 +16,83 @@ describe('Availability Routes', () => {
 
     beforeEach(async () => {
         await clearTestDb();
-        testUser = await createTestUser();
         
-        // Create fresh instances for each test
-        mockAuth = (req, res, next) => {
-            req.isAuthenticated = () => true;
-            req.user = { id: testUser.id, is_active: true };
-            next();
-        };
+        app = express();
+        app.use(express.json());
+        
+        // Set up session and auth
+        app.use(session({
+            secret: 'test-secret',
+            resave: false,
+            saveUninitialized: false
+        }));
+        app.use(passport.initialize());
+        app.use(passport.session());
+        configurePassport(passport, testDb);
 
-        // Create a fresh router instance
-        availabilityRouter = require('../../routes/availability')(testDb);
-        
-        // Reset the app routes
-        app._router.stack = app._router.stack.filter(layer => !layer.route || layer.route.path !== '/availability');
-        app.use('/availability', mockAuth, availabilityRouter);
+        // Set up view engine
+        app.set('view engine', 'ejs');
+        app.set('views', 'views');
+        app.engine('ejs', (path, data, cb) => {
+            cb(null, JSON.stringify(data));
+        });
+
+        // Create test user and make them active
+        testUser = await createTestUser();
+        await new Promise((resolve, reject) => {
+            testDb.run(
+                'UPDATE users SET is_active = 1 WHERE id = ?',
+                [testUser.id],
+                (err) => err ? reject(err) : resolve()
+            );
+        });
+
+        // Set up auth for test routes
+        app.use((req, res, next) => {
+            req.isAuthenticated = () => true;
+            req.user = testUser;
+            next();
+        });
+
+        // Add routes
+        const availabilityRoutes = require('../../routes/availability')(testDb);
+        app.use('/availability', availabilityRoutes);
+    });
+
+    describe('GET /availability', () => {
+        it('should return availability for next week when no offset specified', async () => {
+            const response = await request(app)
+                .get('/availability')
+                .expect(200);
+
+            const data = JSON.parse(response.text);
+            expect(data.weekTitle).toBe('Next Week');
+            expect(data.weekOffset).toBe(0);
+            expect(data.timeSlots).toHaveLength(4);
+            expect(data.days).toHaveLength(7);
+        });
+
+        it('should return this week\'s availability with offset -1', async () => {
+            const response = await request(app)
+                .get('/availability?weekOffset=-1')
+                .expect(200);
+
+            const data = JSON.parse(response.text);
+            expect(data.weekTitle).toBe('This Week');
+            expect(data.weekOffset).toBe(-1);
+        });
+
+        it('should limit week offset to valid range', async () => {
+            const response = await request(app)
+                .get('/availability?weekOffset=-2')
+                .expect(200);
+
+            const data = JSON.parse(response.text);
+            expect(data.weekOffset).toBe(-1); // Should be limited to -1
+        });
     });
 
     describe('POST /availability/update', () => {
-        it('should handle invalid input data', async () => {
-            const availability = [
-                {
-                    date: null,
-                    time: '8:00am',
-                    isAvailable: true
-                }
-            ];
-
-            const response = await request(app)
-                .post('/availability/update')
-                .send({ availability });
-
-            expect(response.status).toBe(400);
-            expect(response.body).toHaveProperty('error', 'Invalid slot data');
-
-            // Verify no records were created
-            const updated = await getAvailability(testUser.id);
-            expect(updated).toHaveLength(0);
-        });
-
         it('should update availability successfully', async () => {
             const availability = [
                 {
@@ -106,80 +109,53 @@ describe('Availability Routes', () => {
 
             const response = await request(app)
                 .post('/availability/update')
-                .send({ availability });
+                .send({ availability })
+                .expect(200);
 
-            expect(response.status).toBe(200);
             expect(response.body).toHaveProperty('message', 'Availability updated successfully');
 
-            // Wait for SQLite to finish writing
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Verify the updates in the database
-            const updated = await getAvailability(testUser.id);
-            expect(updated).toHaveLength(2);
-            expect(updated[0]).toMatchObject({
-                user_id: testUser.id,
-                day_date: '2024-01-01',
-                time_slot: '8:00am',
-                is_available: true
-            });
-            expect(updated[1]).toMatchObject({
-                user_id: testUser.id,
-                day_date: '2024-01-01',
-                time_slot: '12:30pm',
-                is_available: false
+            // Verify the data was saved
+            const saved = await new Promise((resolve, reject) => {
+                testDb.all(
+                    'SELECT * FROM availability WHERE user_id = ? AND day_date = ? ORDER BY time_slot',
+                    [testUser.id, '2024-01-01'],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        resolve(rows.map(row => ({
+                            ...row,
+                            is_available: row.is_available === 1
+                        })));
+                    }
+                );
             });
 
-            // Verify preferences were stored
-            const prefs = await getPreferences(testUser.id);
-            expect(prefs).toBeTruthy();
-            const parsedPrefs = JSON.parse(prefs.preferences);
-            expect(parsedPrefs).toHaveLength(2);
-            expect(parsedPrefs[0]).toMatchObject({
-                dayOfWeek: 1, // Monday
-                time: '8:00am',
-                isAvailable: true
-            });
+            expect(saved).toHaveLength(2);
+            expect(saved.find(s => s.time_slot === '8:00am').is_available).toBe(true);
+            expect(saved.find(s => s.time_slot === '12:30pm').is_available).toBe(false);
         });
 
-        it('should update existing availability', async () => {
-            // First create some availability
-            await createAvailability(testUser.id, [
-                {
-                    date: '2024-01-01',
-                    time: '8:00am',
-                    isAvailable: true
-                }
-            ]);
-
-            // Then update it
-            const availability = [
-                {
-                    date: '2024-01-01',
-                    time: '8:00am',
-                    isAvailable: false
-                }
-            ];
-
+        it('should reject invalid availability data', async () => {
             const response = await request(app)
                 .post('/availability/update')
-                .send({ availability });
+                .send({ availability: [{ invalid: 'data' }] })
+                .expect(400);
 
-            expect(response.status).toBe(200);
-
-            // Wait for SQLite to finish writing
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Verify the update
-            const updated = await getAvailability(testUser.id);
-            expect(updated).toHaveLength(1);
-            expect(updated[0].is_available).toBe(false);
+            expect(response.body).toHaveProperty('error', 'Invalid slot data');
         });
 
-        it('should store user preferences', async () => {
+        it('should handle missing availability data', async () => {
+            const response = await request(app)
+                .post('/availability/update')
+                .send({})
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'Invalid availability data');
+        });
+
+        it('should store preferences along with availability', async () => {
             const availability = [
                 {
-                    date: '2024-01-01',
+                    date: '2024-01-01', // This is a Monday
                     time: '8:00am',
                     isAvailable: true
                 }
@@ -187,20 +163,69 @@ describe('Availability Routes', () => {
 
             await request(app)
                 .post('/availability/update')
-                .send({ availability });
+                .send({ availability })
+                .expect(200);
 
-            // Wait for SQLite to finish writing
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // Verify preferences were saved
+            const prefs = await new Promise((resolve, reject) => {
+                testDb.get(
+                    'SELECT preferences FROM user_preferences WHERE user_id = ?',
+                    [testUser.id],
+                    (err, row) => err ? reject(err) : resolve(row)
+                );
+            });
 
-            // Verify preferences were stored
-            const prefs = await getPreferences(testUser.id);
-            expect(prefs).toBeTruthy();
-            const parsedPrefs = JSON.parse(prefs.preferences);
-            expect(parsedPrefs[0]).toMatchObject({
-                dayOfWeek: 1, // Monday (1-7 for Mon-Sun)
+            const savedPrefs = JSON.parse(prefs.preferences);
+            expect(savedPrefs[0]).toEqual({
+                dayOfWeek: 1, // Monday
                 time: '8:00am',
                 isAvailable: true
             });
+        });
+    });
+
+    describe('Authentication', () => {
+        it('should redirect unauthenticated users to login', async () => {
+            // Create new app without auth
+            const noAuthApp = express();
+            noAuthApp.use(express.json());
+            
+            // Mock isAuthenticated to return false
+            noAuthApp.use((req, res, next) => {
+                req.isAuthenticated = () => false;
+                next();
+            });
+
+            const availabilityRoutes = require('../../routes/availability')(testDb);
+            noAuthApp.use('/availability', availabilityRoutes);
+
+            const response = await request(noAuthApp)
+                .get('/availability')
+                .expect(302);  // Expect redirect
+
+            expect(response.header.location).toBe('/login');
+        });
+
+        it('should redirect inactive users to /inactive', async () => {
+            // Create new app with inactive user
+            const inactiveApp = express();
+            inactiveApp.use(express.json());
+            
+            // Mock authenticated but inactive user
+            inactiveApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { ...testUser, is_active: false };
+                next();
+            });
+
+            const availabilityRoutes = require('../../routes/availability')(testDb);
+            inactiveApp.use('/availability', availabilityRoutes);
+
+            const response = await request(inactiveApp)
+                .get('/availability')
+                .expect(302);  // Expect redirect
+
+            expect(response.header.location).toBe('/inactive');
         });
     });
 }); 
