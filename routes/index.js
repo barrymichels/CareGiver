@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated, isActive } = require('../middleware/auth');
+const { isAuthenticated, isAuthenticatedApi, isActive } = require('../middleware/auth');
 
 function checkSetupRequired(db) {
     return new Promise((resolve, reject) => {
@@ -27,7 +27,7 @@ function formatDateToICS(date) {
 
 module.exports = (db) => {
     // Export calendar endpoint
-    router.get('/export-calendar', isAuthenticated, isActive, async (req, res) => {
+    router.get('/export-calendar', isAuthenticatedApi, isActive, async (req, res) => {
         try {
             // Calculate week dates
             const today = new Date();

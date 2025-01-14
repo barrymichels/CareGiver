@@ -5,6 +5,13 @@ function isAuthenticated(req, res, next) {
     res.redirect('/login');
 }
 
+function isAuthenticatedApi(req, res, next) {
+    if (req.isAuthenticated()) {
+        return next();
+    }
+    res.status(403).json({ error: 'Authentication required' });
+}
+
 function isActive(req, res, next) {
     if (req.user && req.user.is_active) {
         return next();
@@ -25,6 +32,7 @@ const isAdmin = (req, res, next) => {
 
 module.exports = {
     isAuthenticated,
+    isAuthenticatedApi,
     isActive,
     isAdmin
 }; 

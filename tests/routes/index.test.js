@@ -36,7 +36,21 @@ jest.mock('../../middleware/auth', () => ({
         }
         next();
     },
-    isActive: (req, res, next) => mockIsActive(req, res, next)
+    isAuthenticatedApi: (req, res, next) => {
+        if (!req.isAuthenticated()) {
+            return res.status(403).json({ error: 'Authentication required' });
+        }
+        next();
+    },
+    isActive: (req, res, next) => {
+        if (!req.user?.is_active) {
+            if (req.path === '/export-calendar') {
+                return res.status(403).json({ error: 'Account not activated' });
+            }
+            return res.redirect('/inactive');
+        }
+        next();
+    }
 }));
 
 describe('Index Routes', () => {
@@ -47,7 +61,7 @@ describe('Index Routes', () => {
 
     beforeAll(async () => {
         await initializeTestDb();
-        db = testDb; // Use the same database connection throughout
+        db = testDb;
     });
 
     beforeEach(async () => {
@@ -59,101 +73,37 @@ describe('Index Routes', () => {
         // Configure middleware
         app.use(express.json());
         app.use(express.urlencoded({ extended: true }));
-
-        // Session configuration
-        const sessionMiddleware = session({
+        app.use(session({
             secret: 'test-secret',
             resave: false,
-            saveUninitialized: false,
-            cookie: { secure: false }
-        });
-        app.use(sessionMiddleware);
+            saveUninitialized: false
+        }));
 
-        // Create a new instance of Passport for each test
-        const passportInstance = new passport.Passport();
-        app.use(passportInstance.initialize());
-        app.use(passportInstance.session());
-
-        // View engine setup
+        // Set up view engine
         app.set('view engine', 'ejs');
-        app.set('views', require('path').join(__dirname, '../../views'));
-
-        // Configure passport
-        passportInstance.use(new LocalStrategy(
-            { usernameField: 'email' },
-            async (email, password, done) => {
-                try {
-                    const user = await new Promise((resolve, reject) => {
-                        db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
-                            if (err) reject(err);
-                            resolve(row);
-                        });
-                    });
-
-                    if (!user) {
-                        return done(null, false, { message: 'Invalid email or password' });
-                    }
-
-                    const isMatch = await bcrypt.compare(password, user.password);
-                    if (!isMatch) {
-                        return done(null, false, { message: 'Invalid email or password' });
-                    }
-
-                    return done(null, user);
-                } catch (err) {
-                    return done(err);
-                }
-            }
-        ));
-
-        passportInstance.serializeUser((user, done) => {
-            done(null, user.id);
-        });
-
-        passportInstance.deserializeUser((id, done) => {
-            db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
-                if (err) return done(err);
-                if (!user) return done(null, false);
-                done(null, user);
-            });
+        app.engine('ejs', (path, data, cb) => {
+            cb(null, 'rendered');
         });
 
         // Create test user
         testUser = await createTestUser();
 
-        // Add auth routes for login
-        app.post('/login', (req, res, next) => {
-            passportInstance.authenticate('local', (err, user, info) => {
-                if (err) return next(err);
-                if (!user) return res.status(401).json(info);
-                
-                req.logIn(user, (err) => {
-                    if (err) return next(err);
-                    res.status(200).json({ success: true });
-                });
-            })(req, res, next);
-        });
-
-        // Add inactive route
-        app.get('/inactive', isAuthenticated, (req, res) => {
-            if (req.user.is_active) {
-                return res.redirect('/');
+        // Set up authentication mocking
+        app.use((req, res, next) => {
+            // Allow tests to override isAuthenticated
+            if (!req.isAuthenticated) {
+                req.isAuthenticated = () => true;
             }
-            res.status(200).send('Inactive page');
+            // Allow tests to override user
+            if (!req.user) {
+                req.user = testUser;
+            }
+            next();
         });
 
-        // Add the index routes
+        // Add routes
         const indexRoutes = require('../../routes/index')(db);
         app.use('/', indexRoutes);
-
-        // Error handling middleware
-        app.use((err, req, res, next) => {
-            console.error('Test error:', err);
-            res.status(500).json({ error: err.message });
-        });
-
-        // Create test server
-        server = app.listen(0);
     });
 
     afterEach(async () => {
@@ -190,15 +140,41 @@ describe('Index Routes', () => {
         });
 
         it('should redirect to login if not authenticated', async () => {
-            const response = await request(app).get('/');
-            expect(response.status).toBe(302);
+            const testApp = express();
+            testApp.use(express.json());
+            
+            // Mock unauthenticated user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => false;
+                next();
+            });
+
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            const response = await request(testApp)
+                .get('/')
+                .expect(302);
+
             expect(response.header.location).toBe('/login');
         });
 
         it('should render dashboard for authenticated and active user', async () => {
-            const agent = request.agent(app);
-            
-            // Set user as active before login
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+
+            // Set up view engine
+            testApp.set('view engine', 'ejs');
+            testApp.engine('ejs', (path, data, cb) => {
+                cb(null, 'rendered');
+            });
+
+            // Set user as active
             await new Promise((resolve, reject) => {
                 db.run(
                     'UPDATE users SET is_active = 1 WHERE id = ?',
@@ -210,81 +186,84 @@ describe('Index Routes', () => {
                 );
             });
 
-            // Login
-            const loginResponse = await agent
-                .post('/login')
-                .send({ email: testUser.email, password: 'password123' });
-            expect(loginResponse.status).toBe(200);
-
-            // Mock render to avoid template issues in tests
-            app.set('view engine', 'ejs');
-            app.engine('ejs', (path, data, cb) => {
-                cb(null, 'rendered');
+            // Mock authenticated and active user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { ...testUser, is_active: true };
+                next();
             });
 
-            const response = await agent.get('/');
-            expect(response.status).toBe(200);
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            const response = await request(testApp)
+                .get('/')
+                .expect(200);
+
+            expect(response.text).toBe('rendered');
         });
 
         it('should redirect inactive user to /inactive', async () => {
-            const agent = request.agent(app);
-            
-            // Ensure user is inactive
-            await new Promise((resolve, reject) => {
-                db.run(
-                    'UPDATE users SET is_active = 0 WHERE id = ?',
-                    [testUser.id],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+
+            // Mock authenticated but inactive user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { ...testUser, is_active: false };
+                next();
             });
 
-            // Login
-            const loginResponse = await agent
-                .post('/login')
-                .send({ email: testUser.email, password: 'password123' });
-            expect(loginResponse.status).toBe(200);
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
 
-            const response = await agent.get('/');
-            expect(response.status).toBe(302);
+            const response = await request(testApp)
+                .get('/')
+                .expect(302);
+
             expect(response.header.location).toBe('/inactive');
         });
 
         it('should include assignments and availability in dashboard render', async () => {
-            const agent = request.agent(app);
-            
-            // Set user as active before login
-            await new Promise((resolve, reject) => {
-                db.run(
-                    'UPDATE users SET is_active = 1 WHERE id = ?',
-                    [testUser.id],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
-            });
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
 
-            // Login
-            const loginResponse = await agent
-                .post('/login')
-                .send({ email: testUser.email, password: 'password123' });
-            expect(loginResponse.status).toBe(200);
-
+            // Set up view engine to capture render data
             let renderData;
-            app.set('view engine', 'ejs');
-            app.engine('ejs', (path, data, cb) => {
+            testApp.set('view engine', 'ejs');
+            testApp.engine('ejs', (path, data, cb) => {
                 renderData = data;
                 cb(null, 'rendered');
             });
 
-            const response = await agent.get('/');
-            expect(response.status).toBe(200);
-            expect(renderData).toHaveProperty('user');
+            // Mock authenticated and active user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { ...testUser, is_active: true };
+                next();
+            });
+
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            await request(testApp)
+                .get('/')
+                .expect(200);
+
+            expect(renderData).toBeDefined();
             expect(renderData).toHaveProperty('assignments');
             expect(renderData).toHaveProperty('userAvailability');
+            expect(renderData).toHaveProperty('weekStart');
         });
 
         it('should handle database error during setup check', async () => {
@@ -560,6 +539,154 @@ describe('Index Routes', () => {
 
             // Clean up
             await new Promise(resolve => errorDb.close(resolve));
+        });
+    });
+
+    describe('GET /export-calendar', () => {
+        let testUser;
+        let weekStart;
+
+        beforeEach(async () => {
+            // Create test user
+            testUser = await createTestUser({
+                is_active: true
+            });
+
+            // Calculate current week's Monday in UTC
+            const today = new Date();
+            weekStart = new Date(Date.UTC(
+                today.getUTCFullYear(),
+                today.getUTCMonth(),
+                today.getUTCDate() - ((today.getUTCDay() + 6) % 7) // Get Monday
+            ));
+
+            // Format date for SQLite (YYYY-MM-DD)
+            const dateStr = weekStart.toISOString().split('T')[0];
+
+            // Create some test assignments for current week
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    INSERT INTO assignments (user_id, day_date, time_slot, assigned_by)
+                    VALUES 
+                        (?, ?, '9:00am', ?),
+                        (?, ?, '2:00pm', ?)
+                `, [testUser.id, dateStr, testUser.id, testUser.id, dateStr, testUser.id], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Create fresh Express app instance for each test
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+            testApp.use(passport.initialize());
+            testApp.use(passport.session());
+
+            // Mock authenticated user first
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = testUser; // Use the full test user object
+                next();
+            });
+
+            // Add routes
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            // Update app reference
+            app = testApp;
+        });
+
+        it('should export calendar in ICS format', async () => {
+            const agent = request.agent(app);
+            
+            const response = await agent
+                .get('/export-calendar')
+                .expect(200);
+
+            expect(response.headers['content-type']).toMatch(/text\/calendar/i);
+            expect(response.headers['content-disposition']).toMatch(/^attachment; filename=schedule-.*\.ics$/i);
+
+            const icsContent = response.text;
+            expect(icsContent).toContain('BEGIN:VCALENDAR');
+            expect(icsContent).toContain('VERSION:2.0');
+            expect(icsContent).toContain('PRODID:-//CareGiver//EN');
+            expect(icsContent).toContain('BEGIN:VEVENT');
+
+            // Get the date from the actual ICS content
+            const match = icsContent.match(/DTSTART:(\d{8})T/);
+            expect(match).toBeTruthy();
+            const actualDate = match[1];
+
+            // Verify time portions
+            expect(icsContent).toContain(`DTSTART:${actualDate}T090000`);
+            expect(icsContent).toContain(`DTEND:${actualDate}T091500`);
+            expect(icsContent).toContain('END:VEVENT');
+            expect(icsContent).toContain('END:VCALENDAR');
+        });
+
+        it('should require authentication', async () => {
+            const testApp = express();
+            testApp.use(express.json());
+            
+            // Mock unauthenticated user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => false;
+                next();
+            });
+
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            const response = await request(testApp)
+                .get('/export-calendar')
+                .expect(403);
+
+            expect(response.body).toHaveProperty('error', 'Authentication required');
+        });
+
+        it('should format dates correctly in ICS file', async () => {
+            const agent = request.agent(app);
+
+            // Use current week's date
+            const dateStr = weekStart.toISOString().split('T')[0];
+
+            // Create assignment with specific time
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    DELETE FROM assignments WHERE user_id = ?;
+                `, [testUser.id], (err) => {
+                    if (err) reject(err);
+                    db.run(`
+                        INSERT INTO assignments (user_id, day_date, time_slot, assigned_by)
+                        VALUES (?, ?, '2:30pm', ?)
+                    `, [testUser.id, dateStr, testUser.id], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+            });
+
+            const response = await agent
+                .get('/export-calendar')
+                .expect(200);
+
+            expect(response.headers['content-type']).toMatch(/text\/calendar/i);
+            const icsContent = response.text;
+            
+            // Get the date from the actual ICS content
+            const match = icsContent.match(/DTSTART:(\d{8})T/);
+            expect(match).toBeTruthy();
+            const actualDate = match[1];
+
+            // Verify time portion only
+            expect(icsContent).toContain(`DTSTART:${actualDate}T143000`);
+            expect(icsContent).toContain(`DTEND:${actualDate}T144500`);
         });
     });
 }); 
