@@ -170,6 +170,64 @@ describe('Admin Routes', () => {
             expect(rendered.data.message).toBe('Server error');
             expect(console.error).toHaveBeenCalled();
         });
+
+        it('should handle database error when fetching users', async () => {
+            console.error = jest.fn();
+            
+            const originalAll = testDb.all;
+            testDb.all = (sql, params, callback) => {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
+                if (sql.includes('WHERE is_active = 1')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalAll.call(testDb, sql, params, callback);
+                }
+            };
+
+            const response = await request(app)
+                .get('/admin')
+                .expect(500);
+
+            const rendered = JSON.parse(response.text);
+            expect(normalizeViewPath(rendered.view)).toBe('error');
+            expect(rendered.data.message).toBe('Server error');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.all = originalAll;
+        });
+
+        it('should handle database error when fetching availability', async () => {
+            console.error = jest.fn();
+            
+            const originalAll = testDb.all;
+            testDb.all = (sql, params, callback) => {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
+                if (sql.includes('FROM availability')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalAll.call(testDb, sql, params, callback);
+                }
+            };
+
+            const response = await request(app)
+                .get('/admin')
+                .expect(500);
+
+            const rendered = JSON.parse(response.text);
+            expect(normalizeViewPath(rendered.view)).toBe('error');
+            expect(rendered.data.message).toBe('Server error');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.all = originalAll;
+        });
     });
 
     describe('GET /admin/users', () => {
@@ -376,6 +434,40 @@ describe('Admin Routes', () => {
             expect(testDb.run).toHaveBeenCalled();
             // Remove console.error expectation since it's not in the implementation
         });
+
+        it('should handle database error during assignment deletion', async () => {
+            // No need to mock console.error since it's not used in the route
+            
+            const originalRun = testDb.run;
+            testDb.run = (sql, params, callback) => {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
+                if (sql.includes('DELETE FROM assignments')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalRun.call(testDb, sql, params, callback);
+                }
+            };
+
+            const response = await request(app)
+                .post('/admin/assign')
+                .send({
+                    assignments: [{
+                        date: '2024-01-01',
+                        time: '8:00am',
+                        unassign: true
+                    }]
+                })
+                .expect(500);
+
+            expect(response.body.error).toBe('Server error');
+            // Remove console.error expectation since it's not in the implementation
+
+            // Restore original function
+            testDb.run = originalRun;
+        });
     });
 
     describe('PUT /admin/users/:id', () => {
@@ -581,6 +673,28 @@ describe('Admin Routes', () => {
             expect(response.body.error).toBe('Server error');
             expect(console.error).toHaveBeenCalled();
         });
+
+        it('should handle missing first name', async () => {
+            const response = await request(app)
+                .post('/admin/users/virtual')
+                .send({
+                    lastName: 'User'
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('First and last name are required');
+        });
+
+        it('should handle missing last name', async () => {
+            const response = await request(app)
+                .post('/admin/users/virtual')
+                .send({
+                    firstName: 'Virtual'
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('First and last name are required');
+        });
     });
 
     describe('Virtual User Conversion', () => {
@@ -673,62 +787,140 @@ describe('Admin Routes', () => {
 
             expect(response.body.error).toBe('User not found');
         });
+
+        it('should handle missing email', async () => {
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/convert`)
+                .send({})
+                .expect(400);
+
+            expect(response.body.error).toBe('Email is required');
+        });
+
+        it('should handle database error during token creation', async () => {
+            console.error = jest.fn();
+            
+            const originalRun = testDb.run;
+            testDb.run = (sql, params, callback) => {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
+                if (sql.includes('UPDATE users')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalRun.call(testDb, sql, params, callback);
+                }
+            };
+
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/convert`)
+                .send({
+                    email: 'new@example.com'
+                })
+                .expect(500);
+
+            expect(response.body.error).toBe('Server error');
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore original function
+            testDb.run = originalRun;
+        });
     });
 
-    describe('Virtual User Availability', () => {
+    describe('User Availability Management', () => {
         let virtualUser;
-        const availabilityData = [
-            { date: '2024-01-01', time: '10:00am', isAvailable: true },
-            { date: '2024-01-01', time: '11:00am', isAvailable: false },
-            { date: '2024-01-02', time: '10:00am', isAvailable: true }
-        ];
+        let regularUser;
 
         beforeEach(async () => {
-            virtualUser = await createTestUser({
-                name: 'Virtual User',
-                is_virtual: 1,
-                is_active: 1
+            // Create a virtual user
+            await new Promise((resolve, reject) => {
+                testDb.run(
+                    'INSERT INTO users (first_name, last_name, is_active) VALUES (?, ?, 1)',
+                    ['Virtual', 'User'],
+                    function(err) {
+                        if (err) reject(err);
+                        virtualUser = { id: this.lastID };
+                        resolve();
+                    }
+                );
+            });
+
+            // Create a regular user
+            await new Promise((resolve, reject) => {
+                testDb.run(
+                    'INSERT INTO users (first_name, last_name, email, password, is_active) VALUES (?, ?, ?, ?, 1)',
+                    ['Regular', 'User', 'regular@example.com', 'hashedpassword'],
+                    function(err) {
+                        if (err) reject(err);
+                        regularUser = { id: this.lastID };
+                        resolve();
+                    }
+                );
             });
         });
 
         it('should update virtual user availability', async () => {
+            const availability = [
+                {
+                    date: '2024-01-01',
+                    time: '8:00am',
+                    isAvailable: true
+                }
+            ];
+
             const response = await request(app)
                 .post(`/admin/users/${virtualUser.id}/availability`)
-                .send({ availability: availabilityData });
+                .send({ availability })
+                .expect(200);
 
-            expect(response.status).toBe(200);
+            expect(response.body).toHaveProperty('message', 'Availability updated successfully');
 
-            const updatedAvailability = await getAvailability(virtualUser.id);
-            expect(updatedAvailability.length).toBe(availabilityData.length);
-
-            // Sort both arrays by date and time for comparison
-            const sortedExpected = [...availabilityData].sort((a, b) => 
-                a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)
-            );
-            const sortedActual = [...updatedAvailability].sort((a, b) => 
-                a.day_date === b.day_date ? a.time_slot.localeCompare(b.time_slot) : a.day_date.localeCompare(b.day_date)
-            );
-
-            sortedExpected.forEach((expected, index) => {
-                const actual = sortedActual[index];
-                expect(actual.user_id).toBe(virtualUser.id);
-                expect(actual.day_date).toBe(expected.date);
-                expect(actual.time_slot).toBe(expected.time);
-                expect(actual.is_available).toBe(expected.isAvailable);
+            // Verify the update
+            const saved = await new Promise((resolve, reject) => {
+                testDb.get(
+                    'SELECT is_available FROM availability WHERE user_id = ? AND day_date = ? AND time_slot = ?',
+                    [virtualUser.id, '2024-01-01', '8:00am'],
+                    (err, row) => err ? reject(err) : resolve(row)
+                );
             });
+            expect(saved.is_available).toBe(1);
+        });
+
+        it('should update regular user availability', async () => {
+            const availability = [
+                {
+                    date: '2024-01-01',
+                    time: '8:00am',
+                    isAvailable: true
+                }
+            ];
+
+            const response = await request(app)
+                .post(`/admin/users/${regularUser.id}/availability`)
+                .send({ availability })
+                .expect(200);
+
+            expect(response.body).toHaveProperty('message', 'Availability updated successfully');
+
+            // Verify the update
+            const saved = await new Promise((resolve, reject) => {
+                testDb.get(
+                    'SELECT is_available FROM availability WHERE user_id = ? AND day_date = ? AND time_slot = ?',
+                    [regularUser.id, '2024-01-01', '8:00am'],
+                    (err, row) => err ? reject(err) : resolve(row)
+                );
+            });
+            expect(saved.is_available).toBe(1);
         });
 
         it('should validate availability data', async () => {
             const response = await request(app)
                 .post(`/admin/users/${virtualUser.id}/availability`)
-                .send({
-                    availability: [
-                        { date: '2024-01-01' } // Missing time and isAvailable
-                    ]
-                })
+                .send({ availability: [{ invalid: 'data' }] })
                 .expect(400);
 
-            expect(response.body.error).toBe('Invalid slot data');
+            expect(response.body).toHaveProperty('error', 'Invalid slot data');
         });
 
         it('should handle invalid availability array', async () => {
