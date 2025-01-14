@@ -16,7 +16,10 @@ function isActive(req, res, next) {
     if (req.user && req.user.is_active) {
         return next();
     }
-    res.status(403).json({ error: 'Account not activated' });
+    if (req.path === '/export-calendar') {
+        return res.status(403).json({ error: 'Account not activated' });
+    }
+    return res.redirect('/inactive');
 }
 
 const isAdmin = (req, res, next) => {

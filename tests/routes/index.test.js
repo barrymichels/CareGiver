@@ -29,30 +29,6 @@ const mockIsActive = (req, res, next) => {
     next();
 };
 
-jest.mock('../../middleware/auth', () => ({
-    isAuthenticated: (req, res, next) => {
-        if (!req.isAuthenticated()) {
-            return res.redirect('/login');
-        }
-        next();
-    },
-    isAuthenticatedApi: (req, res, next) => {
-        if (!req.isAuthenticated()) {
-            return res.status(403).json({ error: 'Authentication required' });
-        }
-        next();
-    },
-    isActive: (req, res, next) => {
-        if (!req.user?.is_active) {
-            if (req.path === '/export-calendar') {
-                return res.status(403).json({ error: 'Account not activated' });
-            }
-            return res.redirect('/inactive');
-        }
-        next();
-    }
-}));
-
 describe('Index Routes', () => {
     let app;
     let server;
@@ -219,8 +195,11 @@ describe('Index Routes', () => {
                 next();
             });
 
-            const indexRoutes = require('../../routes/index')(db);
-            testApp.use('/', indexRoutes);
+            // Add routes with real auth middleware
+            const { isAuthenticated, isActive } = require('../../middleware/auth');
+            testApp.use('/', isAuthenticated, isActive, (req, res) => {
+                res.send('Should not reach here');
+            });
 
             const response = await request(testApp)
                 .get('/')
@@ -650,6 +629,110 @@ describe('Index Routes', () => {
             expect(response.body).toHaveProperty('error', 'Authentication required');
         });
 
+        it('should require active user', async () => {
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+
+            // Mock authenticated but inactive user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { ...testUser, is_active: false };
+                next();
+            });
+
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            const response = await request(testApp)
+                .get('/export-calendar')
+                .expect(403);
+
+            expect(response.body).toHaveProperty('error', 'Account not activated');
+        });
+
+        it('should handle missing user object', async () => {
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+
+            // Mock authenticated but no user object
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = null;
+                next();
+            });
+
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            const response = await request(testApp)
+                .get('/export-calendar')
+                .expect(403);
+
+            expect(response.body).toHaveProperty('error', 'Account not activated');
+        });
+
+        it('should handle undefined user object', async () => {
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+
+            // Mock authenticated but undefined user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                // Don't set req.user at all
+                next();
+            });
+
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            const response = await request(testApp)
+                .get('/export-calendar')
+                .expect(403);
+
+            expect(response.body).toHaveProperty('error', 'Account not activated');
+        });
+
+        it('should handle user without is_active property', async () => {
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+
+            // Mock authenticated but user missing is_active
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { id: testUser.id }; // Missing is_active
+                next();
+            });
+
+            const indexRoutes = require('../../routes/index')(db);
+            testApp.use('/', indexRoutes);
+
+            const response = await request(testApp)
+                .get('/export-calendar')
+                .expect(403);
+
+            expect(response.body).toHaveProperty('error', 'Account not activated');
+        });
+
         it('should format dates correctly in ICS file', async () => {
             const agent = request.agent(app);
 
@@ -687,6 +770,97 @@ describe('Index Routes', () => {
             // Verify time portion only
             expect(icsContent).toContain(`DTSTART:${actualDate}T143000`);
             expect(icsContent).toContain(`DTEND:${actualDate}T144500`);
+        });
+
+        describe('Authentication', () => {
+            it('should allow authenticated user to proceed', async () => {
+                const testApp = express();
+                testApp.use(express.json());
+                testApp.use(session({
+                    secret: 'test-secret',
+                    resave: false,
+                    saveUninitialized: false
+                }));
+
+                // Mock authenticated user
+                testApp.use((req, res, next) => {
+                    req.isAuthenticated = () => true;
+                    req.user = { ...testUser, is_active: true };
+                    next();
+                });
+
+                // Use the real middleware
+                const auth = require('../../middleware/auth');
+                testApp.get('/test', auth.isAuthenticatedApi, (req, res) => {
+                    res.json({ success: true });
+                });
+
+                const response = await request(testApp)
+                    .get('/test')
+                    .expect(200);
+
+                expect(response.body).toHaveProperty('success', true);
+            });
+        });
+    });
+
+    describe('Authentication Middleware', () => {
+        it('should handle admin check', async () => {
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+
+            // Mock authenticated but non-admin user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { ...testUser, is_admin: false };
+                next();
+            });
+
+            // Use the real middleware
+            const { isAdmin } = require('../../middleware/auth');
+            testApp.get('/admin-test', isAdmin, (req, res) => {
+                res.json({ success: true });
+            });
+
+            const response = await request(testApp)
+                .get('/admin-test')
+                .expect(403);
+
+            expect(response.body).toHaveProperty('error', 'Admin access required');
+        });
+
+        it('should allow admin access', async () => {
+            const testApp = express();
+            testApp.use(express.json());
+            testApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+
+            // Mock authenticated admin user
+            testApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { ...testUser, is_admin: true };
+                next();
+            });
+
+            // Use the real middleware
+            const { isAdmin } = require('../../middleware/auth');
+            testApp.get('/admin-test', isAdmin, (req, res) => {
+                res.json({ success: true });
+            });
+
+            const response = await request(testApp)
+                .get('/admin-test')
+                .expect(200);
+
+            expect(response.body).toHaveProperty('success', true);
         });
     });
 }); 
