@@ -99,6 +99,11 @@ module.exports = (db) => {
                     `DTSTART:${formatDateToICS(startDate)}`,
                     `DTEND:${formatDateToICS(endDate)}`,
                     `SUMMARY:${process.env.ICS_EVENT_SUMMARY || 'CareGiver Shift'}`,
+                    'BEGIN:VALARM',
+                    'ACTION:DISPLAY',
+                    'DESCRIPTION:Reminder',
+                    'TRIGGER:-PT15M',  // 15 minutes before
+                    'END:VALARM',
                     'END:VEVENT'
                 ]);
             });
