@@ -1,41 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title><%= getPageTitle('My Availability') %></title>
+    <title>
+        <%= getPageTitle('My Availability') %>
+    </title>
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="/css/header.css">
     <link rel="stylesheet" href="/css/dashboard.css">
 </head>
+
 <body>
     <%- include('partials/header', { user }) %>
-    
-    <main class="dashboard-content">
-        <div class="week-view">
-            <%- include('partials/availability-manager', { 
-                days,
-                timeSlots,
-                userAvailability,
-                weekStart,
-                weekTitle,
-                weekOffset
-            }) %>
-        </div>
-    </main>
 
-    <div id="unsavedChangesModal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h3>Unsaved Changes</h3>
-            <p>You have unsaved changes. Are you sure you want to leave without saving?</p>
-            <div class="modal-actions">
-                <button type="button" id="stayButton" class="action-button">Stay on Page</button>
-                <button type="button" id="leaveButton" class="action-button danger">Leave without Saving</button>
+        <main class="dashboard-content">
+            <div class="week-view">
+                <%- include('partials/availability-manager', { days, timeSlots, userAvailability, weekTitle: `My
+                    Availability for ${weekTitle}`, weekStart, weekOffset, basePath: '/availability' }) %>
+            </div>
+        </main>
+
+        <div id="unsavedChangesModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h3>Unsaved Changes</h3>
+                <p>You have unsaved changes. Are you sure you want to leave without saving?</p>
+                <div class="modal-actions">
+                    <button type="button" id="stayButton" class="action-button">Stay on Page</button>
+                    <button type="button" id="leaveButton" class="action-button danger">Leave without Saving</button>
+                </div>
             </div>
         </div>
-    </div>
 
-    <script src="/js/header.js"></script>
-    <script src="/js/availability.js"></script>
+        <script src="/js/header.js"></script>
+        <script src="/js/availability.js"></script>
 </body>
-</html> 
+
+</html>

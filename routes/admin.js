@@ -379,6 +379,9 @@ module.exports = function (db) {
     // Get virtual user availability page
     router.get('/users/:id/availability', isAuthenticated, isAdmin, async (req, res) => {
         const { id } = req.params;
+        const weekOffset = parseInt(req.query.weekOffset) || 0;
+        // Limit week offset to just -1 (this week) or 0 (next week)
+        const limitedOffset = Math.max(-1, Math.min(0, weekOffset));
 
         try {
             // Get user info
@@ -394,15 +397,19 @@ module.exports = function (db) {
             });
 
             if (!user) {
-                return res.status(404).json({ error: 'User not found' });
+                return res.status(404).render('error', {
+                    message: 'User not found',
+                    user: req.user
+                });
             }
 
-            // Get user's availability for next week
+            // Get user's availability for target week
             const today = new Date();
-            const nextWeekStart = new Date(today);
-            nextWeekStart.setDate(today.getDate() + (8 - today.getDay())); // Next Monday
-            const nextWeekEnd = new Date(nextWeekStart);
-            nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+            const targetWeekStart = new Date(today);
+            // Calculate target week start based on offset
+            targetWeekStart.setDate(today.getDate() + (8 - today.getDay()) + (limitedOffset * 7)); // Next Monday + offset
+            const targetWeekEnd = new Date(targetWeekStart);
+            targetWeekEnd.setDate(targetWeekStart.getDate() + 6);
 
             const availability = await new Promise((resolve, reject) => {
                 db.all(
@@ -411,17 +418,22 @@ module.exports = function (db) {
                      AND day_date BETWEEN ? AND ?`,
                     [
                         id,
-                        nextWeekStart.toISOString().split('T')[0],
-                        nextWeekEnd.toISOString().split('T')[0]
+                        targetWeekStart.toISOString().split('T')[0],
+                        targetWeekEnd.toISOString().split('T')[0]
                     ],
                     (err, rows) => {
                         if (err) reject(err);
-                        resolve(rows || []);
+                        // Convert SQLite integer to boolean
+                        const converted = (rows || []).map(row => ({
+                            ...row,
+                            is_available: row.is_available === 1
+                        }));
+                        resolve(converted);
                     }
                 );
             });
 
-            // Get time slots configuration
+            // Get time slots from database helper
             const timeSlots = [
                 { time: '8:00am', label: 'Morning' },
                 { time: '12:30pm', label: 'Afternoon' },
@@ -430,20 +442,25 @@ module.exports = function (db) {
             ];
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-            return res.render('admin/manage-availability', {
+            // Set week title based on offset
+            const weekTitle = limitedOffset === -1 ? 'This Week' : 'Next Week';
+
+            res.render('admin/manage-availability', {
                 user: req.user,
                 targetUser: user,
-                userAvailability: availability.map(row => ({
-                    ...row,
-                    is_available: row.is_available === 1
-                })),
+                userAvailability: availability,
                 timeSlots,
                 days,
-                weekStart: nextWeekStart
+                weekStart: targetWeekStart,
+                weekTitle,
+                weekOffset: limitedOffset
             });
         } catch (error) {
             console.error('Error loading availability page:', error);
-            return res.status(500).json({ error: 'Server error' });
+            res.status(500).render('error', {
+                message: 'Server error',
+                user: req.user
+            });
         }
     });
 

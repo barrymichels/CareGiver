@@ -30,7 +30,8 @@
 
                 <div class="availability-wrapper">
                     <%- include('../partials/availability-manager', { days, timeSlots, userAvailability, weekTitle:
-                        `${targetUser.first_name}'s Availability for Next Week`, weekOffset: 0 }) %>
+                        `${targetUser.first_name}'s Availability for ${weekTitle}`, weekStart, weekOffset, basePath:
+                        `/admin/users/${targetUser.id}/availability` }) %>
                 </div>
             </div>
         </main>
