@@ -1,43 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= getPageTitle('Manage Availability') %></title>
+    <title>
+        <%= getPageTitle('Manage Availability') %>
+    </title>
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="/css/header.css">
     <link rel="stylesheet" href="/css/admin.css">
     <link rel="stylesheet" href="/css/dashboard.css">
 </head>
+
 <body>
     <%- include('../partials/header', { user }) %>
-    
-    <main class="admin-content">
-        <div class="availability-container">
-            <div class="admin-controls">
-                <div class="nav-buttons">
-                    <a href="/admin/users" class="nav-button">← Back to Users</a>
+
+        <main class="admin-content">
+            <div class="availability-container">
+                <div class="admin-controls">
+                    <div class="nav-buttons">
+                        <a href="/admin/users" class="nav-button">← Back to Users</a>
+                    </div>
+                    <h1 class="admin-title">Managing Availability for <%= targetUser.first_name %>
+                            <%= targetUser.last_name %>
+                    </h1>
+                    <div class="nav-buttons-spacer"></div>
                 </div>
-                <h1 class="admin-title">Managing Availability for <%= targetUser.first_name %> <%= targetUser.last_name %></h1>
-                <div class="nav-buttons-spacer"></div>
-            </div>
 
-            <div class="availability-wrapper">
-                <%- include('../partials/availability-manager', { 
-                    days,
-                    timeSlots,
-                    userAvailability,
-                    customTitle: `${targetUser.first_name}'s Availability for Next Week`
-                }) %>
+                <div class="availability-wrapper">
+                    <%- include('../partials/availability-manager', { days, timeSlots, userAvailability, weekTitle:
+                        `${targetUser.first_name}'s Availability for Next Week`, weekOffset: 0 }) %>
+                </div>
             </div>
-        </div>
-    </main>
+        </main>
 
-    <script>
-        // Override the endpoint for saving availability
-        window.saveAvailabilityEndpoint = '/admin/users/<%= targetUser.id %>/availability';
-    </script>
-    <script src="/js/header.js"></script>
-    <script src="/js/availability.js"></script>
+        <script>
+            // Override the endpoint for saving availability
+            window.saveAvailabilityEndpoint = '/admin/users/<%= targetUser.id %>/availability';
+        </script>
+        <script src="/js/header.js"></script>
+        <script src="/js/availability.js"></script>
 </body>
-</html> 
+
+</html>

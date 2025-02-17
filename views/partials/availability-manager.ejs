@@ -5,71 +5,75 @@
                 <button type="button" class="nav-button" id="setAllAvailable">Set All Available</button>
                 <button type="button" class="nav-button" id="setAllUnavailable">Set All Unavailable</button>
             </div>
-            
-            <h2 class="week-title">My Availability for <%= weekTitle %></h2>
-            
+
+            <h2 class="week-title">
+                <%= typeof weekTitle !=='undefined' ? weekTitle : 'My Availability' %>
+            </h2>
+
             <div class="week-navigation">
-                <% if (weekOffset > -1) { %>
+                <% if (weekOffset> -1) { %>
                     <a href="/availability?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
                         &larr; Previous
                     </a>
-                <% } %>
-                
-                <% if (weekOffset < 0) { %>
-                    <a href="/availability?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
-                        Next &rarr;
-                    </a>
-                <% } %>
+                    <% } %>
+
+                        <% if (weekOffset < 0) { %>
+                            <a href="/availability?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
+                                Next &rarr;
+                            </a>
+                            <% } %>
             </div>
         </div>
     </div>
     <div class="availability-grid">
-        <% 
-        const nextWeekDates = days.map((day, index) => {
+        <% const nextWeekDates=days.map((day, index)=> {
             const date = new Date(weekStart);
             date.setDate(weekStart.getDate() + index);
             return {
-                name: day,
-                date: date,
-                formatted: date.toLocaleDateString('en-US', { 
-                    month: 'short', 
-                    day: 'numeric'
-                })
+            name: day,
+            date: date,
+            formatted: date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
+            })
             };
-        });
-        %>
-        
-        <% nextWeekDates.forEach(day => { %>
-            <div class="availability-day">
-                <div class="day-header">
-                    <div class="day-name"><%= day.name %></div>
-                    <div class="day-date"><%= day.formatted %></div>
-                </div>
-                <div class="time-slots">
-                    <% timeSlots.forEach(slot => { %>
-                        <% 
-                        const isAvailable = (userAvailability.find(a => 
-                            a.day_date === day.date.toISOString().split('T')[0] && 
-                            a.time_slot === slot.time
-                        )?.is_available) ?? false;
-                        %>
-                        <div class="availability-slot">
-                            <label class="slot-toggle">
-                                <input type="checkbox" 
-                                       name="availability" 
-                                       data-date="<%= day.date.toISOString().split('T')[0] %>"
-                                       data-time="<%= slot.time %>"
-                                       <%= isAvailable ? 'checked' : '' %>>
-                                <span class="slot-time"><%= slot.time %></span>
-                                <span class="slot-status" data-available="<%= isAvailable %>">
-                                    <%= isAvailable ? 'Available' : 'Unavailable' %>
-                                </span>
-                            </label>
+            });
+            %>
+
+            <% nextWeekDates.forEach(day=> { %>
+                <div class="availability-day">
+                    <div class="day-header">
+                        <div class="day-name">
+                            <%= day.name %>
                         </div>
-                    <% }) %>
+                        <div class="day-date">
+                            <%= day.formatted %>
+                        </div>
+                    </div>
+                    <div class="time-slots">
+                        <% timeSlots.forEach(slot=> { %>
+                            <% const isAvailable=(userAvailability.find(a=>
+                                a.day_date === day.date.toISOString().split('T')[0] &&
+                                a.time_slot === slot.time
+                                )?.is_available) ?? false;
+                                %>
+                                <div class="availability-slot">
+                                    <label class="slot-toggle">
+                                        <input type="checkbox" name="availability"
+                                            data-date="<%= day.date.toISOString().split('T')[0] %>"
+                                            data-time="<%= slot.time %>" <%=isAvailable ? 'checked' : '' %>>
+                                        <span class="slot-time">
+                                            <%= slot.time %>
+                                        </span>
+                                        <span class="slot-status" data-available="<%= isAvailable %>">
+                                            <%= isAvailable ? 'Available' : 'Unavailable' %>
+                                        </span>
+                                    </label>
+                                </div>
+                                <% }) %>
+                    </div>
                 </div>
-            </div>
-        <% }) %>
+                <% }) %>
     </div>
     <div class="availability-actions">
         <button type="button" id="saveAvailability" class="action-button">Save Availability</button>

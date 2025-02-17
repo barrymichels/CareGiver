@@ -249,7 +249,7 @@ module.exports = function (db) {
                 db.run(
                     'INSERT INTO users (first_name, last_name, is_active) VALUES (?, ?, 1)',
                     [firstName.trim(), lastName.trim()],
-                    function(err) {
+                    function (err) {
                         if (err) reject(err);
                         resolve(this.lastID);
                     }
@@ -366,7 +366,7 @@ module.exports = function (db) {
 
             // Return success with reset link
             const resetLink = `${process.env.BASE_URL}/auth/reset-password/${token}`;
-            res.json({ 
+            res.json({
                 message: 'User converted successfully',
                 resetLink
             });
@@ -394,10 +394,7 @@ module.exports = function (db) {
             });
 
             if (!user) {
-                return res.status(404).render('error', { 
-                    message: 'User not found',
-                    user: req.user 
-                });
+                return res.status(404).json({ error: 'User not found' });
             }
 
             // Get user's availability for next week
@@ -419,17 +416,12 @@ module.exports = function (db) {
                     ],
                     (err, rows) => {
                         if (err) reject(err);
-                        // Convert SQLite integer to boolean
-                        const converted = (rows || []).map(row => ({
-                            ...row,
-                            is_available: row.is_available === 1
-                        }));
-                        resolve(converted);
+                        resolve(rows || []);
                     }
                 );
             });
 
-            // Get time slots from database helper
+            // Get time slots configuration
             const timeSlots = [
                 { time: '8:00am', label: 'Morning' },
                 { time: '12:30pm', label: 'Afternoon' },
@@ -438,19 +430,20 @@ module.exports = function (db) {
             ];
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-            res.render('admin/manage-availability', {
+            return res.render('admin/manage-availability', {
                 user: req.user,
                 targetUser: user,
-                userAvailability: availability,
+                userAvailability: availability.map(row => ({
+                    ...row,
+                    is_available: row.is_available === 1
+                })),
                 timeSlots,
-                days
+                days,
+                weekStart: nextWeekStart
             });
         } catch (error) {
             console.error('Error loading availability page:', error);
-            res.status(500).render('error', { 
-                message: 'Server error',
-                user: req.user 
-            });
+            return res.status(500).json({ error: 'Server error' });
         }
     });
 
