@@ -16,10 +16,10 @@ describe('Availability Routes', () => {
 
     beforeEach(async () => {
         await clearTestDb();
-        
+
         app = express();
         app.use(express.json());
-        
+
         // Set up session and auth
         app.use(session({
             secret: 'test-secret',
@@ -60,25 +60,25 @@ describe('Availability Routes', () => {
     });
 
     describe('GET /availability', () => {
-        it('should return availability for next week when no offset specified', async () => {
+        it('should return availability for this week when no offset specified', async () => {
             const response = await request(app)
                 .get('/availability')
                 .expect(200);
 
             const data = JSON.parse(response.text);
-            expect(data.weekTitle).toBe('Next Week');
+            expect(data.weekTitle).toBe('This Week');
             expect(data.weekOffset).toBe(0);
             expect(data.timeSlots).toHaveLength(4);
             expect(data.days).toHaveLength(7);
         });
 
-        it('should return this week\'s availability with offset -1', async () => {
+        it('should return last week\'s availability with offset -1', async () => {
             const response = await request(app)
                 .get('/availability?weekOffset=-1')
                 .expect(200);
 
             const data = JSON.parse(response.text);
-            expect(data.weekTitle).toBe('This Week');
+            expect(data.weekTitle).toBe('Last Week');
             expect(data.weekOffset).toBe(-1);
         });
 
@@ -88,7 +88,7 @@ describe('Availability Routes', () => {
                 .expect(200);
 
             const data = JSON.parse(response.text);
-            expect(data.weekOffset).toBe(-1); // Should be limited to -1
+            expect(data.weekOffset).toBe(-1);
         });
     });
 
@@ -189,7 +189,7 @@ describe('Availability Routes', () => {
             // Create new app without auth
             const noAuthApp = express();
             noAuthApp.use(express.json());
-            
+
             // Mock isAuthenticated to return false
             noAuthApp.use((req, res, next) => {
                 req.isAuthenticated = () => false;
@@ -210,7 +210,7 @@ describe('Availability Routes', () => {
             // Create new app with inactive user
             const inactiveApp = express();
             inactiveApp.use(express.json());
-            
+
             // Mock authenticated but inactive user
             inactiveApp.use((req, res, next) => {
                 req.isAuthenticated = () => true;
@@ -228,4 +228,4 @@ describe('Availability Routes', () => {
             expect(response.header.location).toBe('/inactive');
         });
     });
-}); 
+});

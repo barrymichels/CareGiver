@@ -11,14 +11,14 @@
             </h2>
 
             <div class="week-navigation">
-                <% if (weekOffset===0) { %>
-                    <a href="<%= basePath %>?weekOffset=-1" class="nav-button prev-week">
+                <% if (weekOffset> -4) { %>
+                    <a href="<%= basePath %>?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
                         Previous
                     </a>
                     <% } %>
 
-                        <% if (weekOffset===-1) { %>
-                            <a href="<%= basePath %>?weekOffset=0" class="nav-button next-week">
+                        <% if (weekOffset < 1) { %>
+                            <a href="<%= basePath %>?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
                                 Next
                             </a>
                             <% } %>

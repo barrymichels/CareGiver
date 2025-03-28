@@ -3,24 +3,34 @@ const router = express.Router();
 const { isAuthenticated, isActive } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 
-module.exports = function(db) {
+module.exports = function (db) {
     const dbHelper = new DatabaseHelper(db);
-    
+
     // Get user's availability
     router.get('/', isAuthenticated, isActive, async (req, res) => {
         try {
             const weekOffset = parseInt(req.query.weekOffset) || 0;
-            
-            // Limit week offset between -1 (this week) and 0 (next week)
-            const limitedOffset = Math.max(-1, Math.min(0, weekOffset));
 
-            // Calculate the start of the target week
+            // Limit week offset between -4 and 1
+            const limitedOffset = Math.max(-1, Math.min(1, weekOffset));
+
+            // Calculate the start of the target week with consistent approach
             const today = new Date();
             const targetWeekStart = new Date(today);
-            targetWeekStart.setDate(today.getDate() + (8 - today.getDay()) + (limitedOffset * 7));
+            // Set to Monday of current week
+            targetWeekStart.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
+            targetWeekStart.setUTCHours(0, 0, 0, 0);
+            // Apply offset
+            targetWeekStart.setUTCDate(targetWeekStart.getUTCDate() + (limitedOffset * 7));
 
             // Format week title
-            const weekTitle = limitedOffset === 0 ? 'Next Week' : 'This Week';
+            let weekTitle;
+            switch (limitedOffset) {
+                case -1: weekTitle = 'Last Week'; break;
+                case 0: weekTitle = 'This Week'; break;
+                case 1: weekTitle = 'Next Week'; break;
+                default: weekTitle = 'This Week';
+            }
 
             const availability = await new Promise((resolve, reject) => {
                 db.all(
@@ -65,9 +75,9 @@ module.exports = function(db) {
             });
         } catch (error) {
             console.error('Error loading availability:', error);
-            res.status(500).render('error', { 
+            res.status(500).render('error', {
                 message: 'Server error',
-                user: req.user || {} 
+                user: req.user || {}
             });
         }
     });
@@ -75,7 +85,7 @@ module.exports = function(db) {
     // Update availability
     router.post('/update', isAuthenticated, isActive, async (req, res) => {
         const { availability } = req.body;
-        
+
         if (!availability || !Array.isArray(availability) || !availability.length) {
             return res.status(400).json({ error: 'Invalid availability data' });
         }
@@ -86,7 +96,7 @@ module.exports = function(db) {
                 return res.status(400).json({ error: 'Invalid slot data' });
             }
         }
-        
+
         try {
             await dbHelper.withTransaction(async () => {
                 // Insert new availability, using REPLACE to handle any duplicates
@@ -120,4 +130,4 @@ module.exports = function(db) {
     });
 
     return router;
-}; 
+};

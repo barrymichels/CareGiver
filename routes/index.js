@@ -14,14 +14,14 @@ function checkSetupRequired(db) {
 function formatDateToICS(date) {
     // Pad a number with leading zeros
     const pad = (num) => (num < 10 ? '0' : '') + num;
-    
+
     // Format in local time
     const year = date.getFullYear();
     const month = pad(date.getMonth() + 1);
     const day = pad(date.getDate());
     const hours = pad(date.getHours());
     const minutes = pad(date.getMinutes());
-    
+
     return `${year}${month}${day}T${hours}${minutes}00`;
 }
 
@@ -78,7 +78,7 @@ module.exports = (db) => {
 
                 const [hours, minutes, period] = timeMatch.slice(1);
                 let hour = parseInt(hours);
-                
+
                 // Convert to 24-hour format
                 if (period.toLowerCase() === 'pm' && hour !== 12) {
                     hour += 12;
@@ -142,25 +142,11 @@ module.exports = (db) => {
 
                 const today = new Date();
                 const weekStart = new Date(today);
-                
-                // Get current time in EST (UTC-5)
-                const estTime = new Date(today.getTime() - (5 * 60 * 60 * 1000)); // Subtract 5 hours for EST
-                const estDay = estTime.getUTCDay();
-                const estHour = estTime.getUTCHours();
 
-                // If it's Sunday in EST and after 10pm EST, show next week
-                if (estDay === 0 && estHour >= 22) {
-                    // Calculate next Monday from the EST perspective
-                    const daysUntilMonday = 1; // From Sunday to Monday
-                    weekStart.setTime(estTime.getTime() + (daysUntilMonday * 24 * 60 * 60 * 1000));
-                    weekStart.setUTCHours(0, 0, 0, 0);
-                } else {
-                    // Set to current week's Monday in UTC
-                    weekStart.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
-                    weekStart.setUTCHours(0, 0, 0, 0);
-                }
-
-                // Then, adjust by the week offset
+                // Set to Monday of current week in UTC
+                weekStart.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
+                weekStart.setUTCHours(0, 0, 0, 0);
+                // Apply offset if provided
                 weekStart.setUTCDate(weekStart.getUTCDate() + (limitedOffset * 7));
 
                 const weekEnd = new Date(weekStart);

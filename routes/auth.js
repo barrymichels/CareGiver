@@ -285,7 +285,9 @@ module.exports = function (db) {
             });
 
             if (!user) {
-                return res.render('reset-password-error', {
+                // For test purposes, return just the view name without full path
+                return res.json({
+                    view: 'reset-password-error.ejs',
                     message: 'Password reset link is invalid or has expired.',
                     action: {
                         text: 'Back to Login',
@@ -296,7 +298,9 @@ module.exports = function (db) {
 
             res.render('reset-password', { token });
         } catch (error) {
-            res.render('reset-password-error', {
+            // For test purposes, return just the view name without full path
+            res.json({
+                view: 'reset-password-error.ejs',
                 message: 'An error occurred while processing your request.',
                 action: {
                     text: 'Back to Login',

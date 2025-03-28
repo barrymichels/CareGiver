@@ -12,13 +12,17 @@ module.exports = function (db) {
     router.get('/', isAuthenticated, isAdmin, async (req, res) => {
         try {
             const weekOffset = parseInt(req.query.weekOffset) || 0;
-            // Limit week offset between -4 and 4
-            const limitedOffset = Math.max(-4, Math.min(4, weekOffset));
+            // Limit week offset between -4 and 1
+            const limitedOffset = Math.max(-4, Math.min(1, weekOffset));
 
             const today = new Date();
             const targetWeekStart = new Date(today);
-            // Calculate target week start based on offset
-            targetWeekStart.setDate(today.getDate() + 7 - today.getDay() + 1 + (limitedOffset * 7));
+            // Set to Monday of current week
+            targetWeekStart.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
+            targetWeekStart.setUTCHours(0, 0, 0, 0);
+            // Apply offset
+            targetWeekStart.setUTCDate(targetWeekStart.getUTCDate() + (limitedOffset * 7));
+
             const targetWeekEnd = new Date(targetWeekStart);
             targetWeekEnd.setDate(targetWeekStart.getDate() + 6);
 
@@ -78,9 +82,9 @@ module.exports = function (db) {
                 case -4: weekTitle = '4 Weeks Ago'; break;
                 case -3: weekTitle = '3 Weeks Ago'; break;
                 case -2: weekTitle = '2 Weeks Ago'; break;
-                case -1: weekTitle = 'This Week'; break;  // Changed from 'Last Week'
-                case 0: weekTitle = 'Next Week'; break;
-                case 1: weekTitle = 'Week After Next'; break;
+                case -1: weekTitle = 'Last Week'; break;
+                case 0: weekTitle = 'This Week'; break;
+                case 1: weekTitle = 'Next Week'; break;
                 default: weekTitle = `${Math.abs(limitedOffset)} Weeks ${limitedOffset > 0 ? 'Ahead' : 'Ago'}`;
             }
 
@@ -380,8 +384,8 @@ module.exports = function (db) {
     router.get('/users/:id/availability', isAuthenticated, isAdmin, async (req, res) => {
         const { id } = req.params;
         const weekOffset = parseInt(req.query.weekOffset) || 0;
-        // Limit week offset to just -1 (this week) or 0 (next week)
-        const limitedOffset = Math.max(-1, Math.min(0, weekOffset));
+        // Limit week offset to range (-4 to 1)
+        const limitedOffset = Math.max(-4, Math.min(1, weekOffset));
 
         try {
             // Get user info
@@ -403,11 +407,15 @@ module.exports = function (db) {
                 });
             }
 
-            // Get user's availability for target week
+            // Calculate target week start with consistent approach
             const today = new Date();
             const targetWeekStart = new Date(today);
-            // Calculate target week start based on offset
-            targetWeekStart.setDate(today.getDate() + (8 - today.getDay()) + (limitedOffset * 7)); // Next Monday + offset
+            // Set to Monday of current week
+            targetWeekStart.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
+            targetWeekStart.setUTCHours(0, 0, 0, 0);
+            // Apply offset
+            targetWeekStart.setUTCDate(targetWeekStart.getUTCDate() + (limitedOffset * 7));
+
             const targetWeekEnd = new Date(targetWeekStart);
             targetWeekEnd.setDate(targetWeekStart.getDate() + 6);
 
@@ -443,7 +451,16 @@ module.exports = function (db) {
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
             // Set week title based on offset
-            const weekTitle = limitedOffset === -1 ? 'This Week' : 'Next Week';
+            let weekTitle;
+            switch (limitedOffset) {
+                case -4: weekTitle = '4 Weeks Ago'; break;
+                case -3: weekTitle = '3 Weeks Ago'; break;
+                case -2: weekTitle = '2 Weeks Ago'; break;
+                case -1: weekTitle = 'Last Week'; break;
+                case 0: weekTitle = 'This Week'; break;
+                case 1: weekTitle = 'Next Week'; break;
+                default: weekTitle = 'This Week';
+            }
 
             res.render('admin/manage-availability', {
                 user: req.user,
