@@ -173,7 +173,7 @@ describe('Admin Routes', () => {
 
         it('should handle database error when fetching users', async () => {
             console.error = jest.fn();
-            
+
             const originalAll = testDb.all;
             testDb.all = (sql, params, callback) => {
                 if (typeof params === 'function') {
@@ -202,7 +202,7 @@ describe('Admin Routes', () => {
 
         it('should handle database error when fetching availability', async () => {
             console.error = jest.fn();
-            
+
             const originalAll = testDb.all;
             testDb.all = (sql, params, callback) => {
                 if (typeof params === 'function') {
@@ -437,7 +437,7 @@ describe('Admin Routes', () => {
 
         it('should handle database error during assignment deletion', async () => {
             // No need to mock console.error since it's not used in the route
-            
+
             const originalRun = testDb.run;
             testDb.run = (sql, params, callback) => {
                 if (typeof params === 'function') {
@@ -612,6 +612,114 @@ describe('Admin Routes', () => {
         });
     });
 
+    describe('User Management', () => {
+        it('should create a new user', async () => {
+            // Create a user
+            const response = await request(app)
+                .post('/admin/users/add')
+                .send({
+                    firstName: 'New',
+                    lastName: 'User',
+                    email: 'new@example.com'
+                })
+                .expect(200);
+
+            expect(response.body.message).toBe('User created successfully');
+
+            // Verify user was created
+            const user = await new Promise((resolve) => {
+                testDb.get(
+                    'SELECT * FROM users WHERE first_name = ? AND last_name = ?',
+                    ['New', 'User'],
+                    (err, row) => resolve(row)
+                );
+            });
+
+            expect(user).toBeDefined();
+            expect(user.email).toBe('new@example.com');
+            expect(user.password).toBeDefined();
+            expect(user.is_active).toBe(1);
+        });
+
+        it('should validate user input', async () => {
+            const response = await request(app)
+                .post('/admin/users/add')
+                .send({
+                    firstName: '',
+                    lastName: '',
+                    email: ''
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('First name, last name, and email are required');
+        });
+
+        it('should validate email format', async () => {
+            const response = await request(app)
+                .post('/admin/users/add')
+                .send({
+                    firstName: 'Test',
+                    lastName: 'User',
+                    email: 'invalid-email'
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('Invalid email format');
+        });
+
+        it('should prevent duplicate emails', async () => {
+            // First, create a user with the email
+            await request(app)
+                .post('/admin/users/add')
+                .send({
+                    firstName: 'First',
+                    lastName: 'User',
+                    email: 'duplicate@example.com'
+                })
+                .expect(200);
+
+            // Then try to create another with the same email
+            const response = await request(app)
+                .post('/admin/users/add')
+                .send({
+                    firstName: 'Second',
+                    lastName: 'User',
+                    email: 'duplicate@example.com'
+                })
+                .expect(400);
+
+            expect(response.body.error).toBe('Email already exists');
+        });
+
+        it('should handle database errors when creating user', async () => {
+            console.error = jest.fn();
+            const originalRun = testDb.run;
+            testDb.run = jest.fn((sql, params, callback) => {
+                if (sql.includes('INSERT INTO users')) {
+                    callback(new Error('Database error'));
+                } else {
+                    originalRun.call(testDb, sql, params, callback);
+                }
+            });
+
+            const response = await request(app)
+                .post('/admin/users/add')
+                .send({
+                    firstName: 'Error',
+                    lastName: 'Test',
+                    email: 'error@test.com'
+                })
+                .expect(500);
+
+            expect(response.body.error).toBe('Server error');
+            expect(testDb.run).toHaveBeenCalled();
+            expect(console.error).toHaveBeenCalled();
+
+            // Restore the original function
+            testDb.run = originalRun;
+        });
+    });
+
     describe('Virtual User Management', () => {
         it('should create a virtual user', async () => {
             // Create a virtual user
@@ -706,7 +814,7 @@ describe('Admin Routes', () => {
                 testDb.run(
                     'INSERT INTO users (first_name, last_name, is_active) VALUES (?, ?, 1)',
                     ['Virtual', 'User'],
-                    function(err) {
+                    function (err) {
                         if (err) reject(err);
                         testDb.get(
                             'SELECT * FROM users WHERE id = ?',
@@ -799,7 +907,7 @@ describe('Admin Routes', () => {
 
         it('should handle database error during token creation', async () => {
             console.error = jest.fn();
-            
+
             const originalRun = testDb.run;
             testDb.run = (sql, params, callback) => {
                 if (typeof params === 'function') {
@@ -838,7 +946,7 @@ describe('Admin Routes', () => {
                 testDb.run(
                     'INSERT INTO users (first_name, last_name, is_active) VALUES (?, ?, 1)',
                     ['Virtual', 'User'],
-                    function(err) {
+                    function (err) {
                         if (err) reject(err);
                         virtualUser = { id: this.lastID };
                         resolve();
@@ -851,7 +959,7 @@ describe('Admin Routes', () => {
                 testDb.run(
                     'INSERT INTO users (first_name, last_name, email, password, is_active) VALUES (?, ?, ?, ?, 1)',
                     ['Regular', 'User', 'regular@example.com', 'hashedpassword'],
-                    function(err) {
+                    function (err) {
                         if (err) reject(err);
                         regularUser = { id: this.lastID };
                         resolve();

@@ -1,126 +1,90 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= getPageTitle('Users') %></title>
+    <title>
+        <%= getPageTitle('Users') %>
+    </title>
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="/css/header.css">
     <link rel="stylesheet" href="/css/admin.css">
 </head>
+
 <body>
     <%- include('../partials/header', { user }) %>
-    
-    <main class="admin-content">
-        <div class="users-container">
-            <div class="users-header">
-                <h1>User Management</h1>
-                <button id="addVirtualUser" class="action-button">Add Virtual User</button>
-            </div>
-            
-            <% 
-            const realUsers = users.filter(u => u.email);
-            const virtualUsers = users.filter(u => !u.email);
-            %>
 
-            <% if (realUsers.length > 0) { %>
-                <h2 class="user-section-title">Active Users</h2>
+        <main class="admin-content">
+            <div class="users-container">
+                <div class="users-header">
+                    <h1>User Management</h1>
+                    <button id="addUser" class="action-button">Add User</button>
+                </div>
+
+                <h2 class="user-section-title">Users</h2>
                 <div class="user-list">
-                    <% realUsers.forEach(function(u) { %>
+                    <% users.forEach(function(u) { %>
                         <div class="user-card">
                             <div class="user-info">
-                                <h3><%= u.first_name %> <%= u.last_name %></h3>
-                                <p><%= u.email %></p>
+                                <h3>
+                                    <%= u.first_name %>
+                                        <%= u.last_name %>
+                                </h3>
+                                <p>
+                                    <%= u.email || 'No email' %>
+                                </p>
                             </div>
                             <div class="user-controls">
                                 <label class="toggle-switch">
-                                    <input type="checkbox" 
-                                           class="active-toggle"
-                                           data-user-id="<%= u.id %>"
-                                           <%= u.is_active ? 'checked' : '' %>>
+                                    <input type="checkbox" class="active-toggle" data-user-id="<%= u.id %>"
+                                        <%=u.is_active ? 'checked' : '' %>>
                                     <span class="slider"></span>
                                     <span class="label">Active</span>
                                 </label>
                                 <label class="toggle-switch">
-                                    <input type="checkbox"
-                                           class="admin-toggle"
-                                           data-user-id="<%= u.id %>"
-                                           <%= u.is_admin ? 'checked' : '' %>>
+                                    <input type="checkbox" class="admin-toggle" data-user-id="<%= u.id %>" <%=u.is_admin
+                                        ? 'checked' : '' %>>
                                     <span class="slider"></span>
                                     <span class="label">Admin</span>
                                 </label>
-                            </div>
-                        </div>
-                    <% }); %>
-                </div>
-            <% } %>
-
-            <% if (virtualUsers.length > 0) { %>
-                <h2 class="user-section-title">Virtual Users</h2>
-                <div class="user-list">
-                    <% virtualUsers.forEach(function(u) { %>
-                        <div class="user-card">
-                            <div class="user-info">
-                                <h3><%= u.first_name %> <%= u.last_name %></h3>
-                                <p class="virtual-label">Virtual User</p>
-                            </div>
-                            <div class="user-controls">
-                                <button class="convert-button" data-user-id="<%= u.id %>"
-                                        data-first-name="<%= u.first_name %>"
-                                        data-last-name="<%= u.last_name %>">
-                                    Convert to Real User
-                                </button>
                                 <a href="/admin/users/<%= u.id %>/availability" class="manage-button">
                                     Manage Availability
                                 </a>
                             </div>
                         </div>
-                    <% }); %>
+                        <% }); %>
                 </div>
-            <% } %>
-        </div>
-    </main>
+            </div>
+        </main>
 
-    <!-- Virtual User Modal -->
-    <div id="virtualUserModal" class="modal">
-        <div class="modal-content">
-            <h2>Add Virtual User</h2>
-            <form id="virtualUserForm">
-                <div class="form-group">
-                    <label for="firstName">First Name</label>
-                    <input type="text" id="firstName" name="firstName" required>
-                </div>
-                <div class="form-group">
-                    <label for="lastName">Last Name</label>
-                    <input type="text" id="lastName" name="lastName" required>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="cancel-button" onclick="closeModal('virtualUserModal')">Cancel</button>
-                    <button type="submit" class="action-button">Add User</button>
-                </div>
-            </form>
+        <!-- Add User Modal -->
+        <div id="addUserModal" class="modal">
+            <div class="modal-content">
+                <h2>Add New User</h2>
+                <form id="addUserForm">
+                    <div class="form-group">
+                        <label for="firstName">First Name</label>
+                        <input type="text" id="firstName" name="firstName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="lastName">Last Name</label>
+                        <input type="text" id="lastName" name="lastName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="cancel-button" onclick="closeModal('addUserModal')">Cancel</button>
+                        <button type="submit" class="action-button">Add User</button>
+                    </div>
+                </form>
+            </div>
         </div>
-    </div>
 
-    <!-- Convert User Modal -->
-    <div id="convertUserModal" class="modal">
-        <div class="modal-content">
-            <h2>Convert to Real User</h2>
-            <p class="convert-user-name"></p>
-            <form id="convertUserForm">
-                <div class="form-group">
-                    <label for="email">Email Address</label>
-                    <input type="email" id="email" name="email" required>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="cancel-button" onclick="closeModal('convertUserModal')">Cancel</button>
-                    <button type="submit" class="action-button">Convert User</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <script src="/js/header.js"></script>
-    <script src="/js/admin.js"></script>
+        <script src="/js/header.js"></script>
+        <script src="/js/admin.js"></script>
 </body>
-</html> 
+
+</html>

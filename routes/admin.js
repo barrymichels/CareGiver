@@ -525,5 +525,56 @@ module.exports = function (db) {
         }
     });
 
+    // Create new user
+    router.post('/users/add', isAuthenticated, isAdmin, async (req, res) => {
+        const { firstName, lastName, email } = req.body;
+
+        try {
+            // Basic validation
+            if (!firstName || !lastName || !email) {
+                return res.status(400).json({ error: 'First name, last name, and email are required' });
+            }
+
+            // Email format validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^@\s]+$/;
+            if (!emailRegex.test(email)) {
+                return res.status(400).json({ error: 'Invalid email format' });
+            }
+
+            // Check for existing email
+            const existingUser = await new Promise((resolve, reject) => {
+                db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+
+            if (existingUser) {
+                return res.status(400).json({ error: 'Email already exists' });
+            }
+
+            // Generate random password
+            const randomPassword = crypto.randomBytes(16).toString('hex');
+            const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+            // Insert new user
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO users (first_name, last_name, email, password, is_active) VALUES (?, ?, ?, ?, 1)',
+                    [firstName.trim(), lastName.trim(), email.toLowerCase(), hashedPassword],
+                    function (err) {
+                        if (err) reject(err);
+                        resolve(this.lastID);
+                    }
+                );
+            });
+
+            res.json({ message: 'User created successfully' });
+        } catch (error) {
+            console.error('Error creating user:', error);
+            res.status(500).json({ error: 'Server error' });
+        }
+    });
+
     return router;
 };
