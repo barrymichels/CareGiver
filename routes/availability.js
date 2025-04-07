@@ -17,11 +17,16 @@ module.exports = function (db) {
             // Calculate the start of the target week with consistent approach
             const today = new Date();
             const targetWeekStart = new Date(today);
-            // Set to Monday of current week
-            targetWeekStart.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
-            targetWeekStart.setUTCHours(0, 0, 0, 0);
+
+            // Correctly set to Monday of current week
+            // For Sunday (day 0), go back 6 days to previous Monday
+            // For Monday through Saturday (days 1-6), go back (day-1) days
+            const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            targetWeekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+            targetWeekStart.setHours(0, 0, 0, 0);
+
             // Apply offset
-            targetWeekStart.setUTCDate(targetWeekStart.getUTCDate() + (limitedOffset * 7));
+            targetWeekStart.setDate(targetWeekStart.getDate() + (limitedOffset * 7));
 
             // Format week title
             let weekTitle;

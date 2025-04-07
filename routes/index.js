@@ -143,15 +143,19 @@ module.exports = (db) => {
                 const today = new Date();
                 const weekStart = new Date(today);
 
-                // Set to Monday of current week in UTC
-                weekStart.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
-                weekStart.setUTCHours(0, 0, 0, 0);
+                // Correctly set to Monday of current week
+                // For Sunday (day 0), go back 6 days to previous Monday
+                // For Monday through Saturday (days 1-6), go back (day-1) days
+                const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+                weekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+                weekStart.setHours(0, 0, 0, 0);
+
                 // Apply offset if provided
-                weekStart.setUTCDate(weekStart.getUTCDate() + (limitedOffset * 7));
+                weekStart.setDate(weekStart.getDate() + (limitedOffset * 7));
 
                 const weekEnd = new Date(weekStart);
-                weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
-                weekEnd.setUTCHours(23, 59, 59, 999);
+                weekEnd.setDate(weekStart.getDate() + 6);
+                weekEnd.setHours(23, 59, 59, 999);
 
                 // Get assignments for the week
                 const assignments = await new Promise((resolve, reject) => {
@@ -173,7 +177,11 @@ module.exports = (db) => {
 
                 // Get user availability for next week
                 const nextWeekStart = new Date(today);
-                nextWeekStart.setDate(today.getDate() + (8 - today.getDay())); // Next Monday
+                // Correctly calculate next Monday
+                const daysUntilNextMonday = currentDay === 0 ? 1 : 8 - currentDay;
+                nextWeekStart.setDate(today.getDate() + daysUntilNextMonday);
+                nextWeekStart.setHours(0, 0, 0, 0);
+
                 const nextWeekEnd = new Date(nextWeekStart);
                 nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
 
