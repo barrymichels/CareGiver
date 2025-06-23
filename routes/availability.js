@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isActive } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
+const TimeslotManager = require('../utils/timeslotManager');
 
 module.exports = function (db) {
     const dbHelper = new DatabaseHelper(db);
+    const timeslotManager = new TimeslotManager(db);
 
     // Get user's availability
     router.get('/', isAuthenticated, isActive, async (req, res) => {
@@ -14,19 +16,11 @@ module.exports = function (db) {
             // Limit week offset between -4 and 1
             const limitedOffset = Math.max(-1, Math.min(1, weekOffset));
 
-            // Calculate the start of the target week with consistent approach
+            // Calculate the start of the target week using TimeslotManager
             const today = new Date();
-            const targetWeekStart = new Date(today);
-
-            // Correctly set to Monday of current week
-            // For Sunday (day 0), go back 6 days to previous Monday
-            // For Monday through Saturday (days 1-6), go back (day-1) days
-            const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            targetWeekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-            targetWeekStart.setHours(0, 0, 0, 0);
-
-            // Apply offset
-            targetWeekStart.setDate(targetWeekStart.getDate() + (limitedOffset * 7));
+            const currentWeekStart = timeslotManager.getWeekStart(today);
+            const targetWeekStart = new Date(currentWeekStart);
+            targetWeekStart.setDate(currentWeekStart.getDate() + (limitedOffset * 7));
 
             // Format week title
             let weekTitle;
@@ -60,13 +54,20 @@ module.exports = function (db) {
                 );
             });
 
-            // Get time slots
-            const timeSlots = [
-                { time: '8:00am', label: 'Morning' },
-                { time: '12:30pm', label: 'Afternoon' },
-                { time: '5:00pm', label: 'Evening' },
-                { time: '9:30pm', label: 'Night' }
-            ];
+            // Get dynamic timeslots for the week
+            const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
+            
+            // Convert grouped timeslots to flat array for backward compatibility
+            const timeSlots = [];
+            for (let day = 0; day < 7; day++) {
+                const daySlots = weekData.timeslots[day] || [];
+                daySlots.forEach(slot => {
+                    if (!timeSlots.find(ts => ts.time === slot.time)) {
+                        timeSlots.push({ time: slot.time, label: slot.label });
+                    }
+                });
+            }
+            
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
             res.render('availability', {
