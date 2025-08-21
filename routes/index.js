@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isAuthenticatedApi, isActive } = require('../middleware/auth');
+const TimeslotManager = require('../utils/timeslotManager');
 
 function checkSetupRequired(db) {
     return new Promise((resolve, reject) => {
@@ -26,6 +27,7 @@ function formatDateToICS(date) {
 }
 
 module.exports = (db) => {
+    const timeslotManager = new TimeslotManager(db);
     // Export calendar endpoint
     router.get('/export-calendar', isAuthenticatedApi, isActive, async (req, res) => {
         try {
@@ -141,17 +143,9 @@ module.exports = (db) => {
                 const limitedOffset = Math.max(-4, Math.min(1, weekOffset));
 
                 const today = new Date();
-                const weekStart = new Date(today);
-
-                // Correctly set to Monday of current week
-                // For Sunday (day 0), go back 6 days to previous Monday
-                // For Monday through Saturday (days 1-6), go back (day-1) days
-                const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-                weekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-                weekStart.setHours(0, 0, 0, 0);
-
-                // Apply offset if provided
-                weekStart.setDate(weekStart.getDate() + (limitedOffset * 7));
+                const currentWeekStart = timeslotManager.getWeekStart(today);
+                const weekStart = new Date(currentWeekStart);
+                weekStart.setDate(currentWeekStart.getDate() + (limitedOffset * 7));
 
                 const weekEnd = new Date(weekStart);
                 weekEnd.setDate(weekStart.getDate() + 6);
@@ -176,6 +170,7 @@ module.exports = (db) => {
                 });
 
                 // Get user availability for next week
+                const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
                 const nextWeekStart = new Date(today);
                 // Correctly calculate next Monday
                 const daysUntilNextMonday = currentDay === 0 ? 1 : 8 - currentDay;
@@ -217,6 +212,9 @@ module.exports = (db) => {
                     default: weekTitle = 'This Week';
                 }
 
+                // Get dynamic timeslots for the week
+                const weekData = await timeslotManager.getTimeslotsForWeek(weekStart);
+
                 res.render('dashboard', {
                     user: req.user,
                     weekTitle,
@@ -224,13 +222,18 @@ module.exports = (db) => {
                     assignments,
                     userAvailability,
                     nextWeekAvailability: [],  // No longer needed since we're showing availability for the current view
-                    weekStart // Pass the weekStart date to the template
+                    weekStart, // Pass the weekStart date to the template
+                    weekData // Pass the dynamic timeslots
                 });
             } else {
                 res.redirect('/login');
             }
         } catch (error) {
-            res.status(500).json({ error: 'Server error' });
+            console.error('Dashboard error:', error);
+            res.status(500).render('error', { 
+                message: 'Server error loading dashboard', 
+                user: req.user || {} 
+            });
         }
     });
 

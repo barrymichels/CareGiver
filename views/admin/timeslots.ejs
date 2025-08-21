@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title><%= getPageTitle('Timeslot Configuration') %></title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/header.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <link rel="stylesheet" href="/css/admin.css">
+    <style>
+        .timeslot-config-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            padding-top: 100px; /* Account for fixed header */
+        }
+
+        .week-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--card-bg);
+            color: var(--text-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .week-navigation {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .week-title {
+            margin: 0;
+            color: var(--primary-color);
+        }
+
+        .locked-week {
+            opacity: 0.7;
+        }
+
+        .locked-week .week-title::after {
+            content: " 🔒";
+            font-size: 0.8em;
+        }
+
+        .timeslot-controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .template-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .template-selector select {
+            padding: 8px 12px;
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            background: var(--input-bg);
+            color: var(--text-color);
+        }
+
+        .template-selector select:focus {
+            border-color: var(--input-border-focus);
+            outline: none;
+        }
+
+        .template-selector select option {
+            background: var(--card-bg);
+            color: var(--text-color);
+        }
+
+        .timeslot-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .day-column {
+            background: var(--card-bg);
+            color: var(--text-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .day-header {
+            background: var(--primary-color);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .day-slots {
+            padding: 15px;
+        }
+
+        .timeslot-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: var(--input-bg);
+            border-radius: 4px;
+            border: 1px solid var(--input-border);
+            color: var(--text-color);
+        }
+
+        .timeslot-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .slot-info {
+            flex-grow: 1;
+        }
+
+        .slot-time {
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .slot-label {
+            font-size: 0.9em;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .slot-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-left: 8px;
+        }
+
+        .slot-actions button {
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        .edit-slot {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffd700;
+            border: 1px solid rgba(255, 215, 0, 0.3);
+        }
+
+        .edit-slot:hover {
+            background: rgba(255, 215, 0, 0.2);
+            color: #fff;
+        }
+
+        .delete-slot {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ff6b6b;
+            border: 1px solid rgba(255, 107, 107, 0.3);
+        }
+
+        .delete-slot:hover {
+            background: rgba(255, 107, 107, 0.2);
+            color: #fff;
+        }
+
+        .add-slot-btn {
+            width: 100%;
+            padding: 10px;
+            background: var(--success-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .add-slot-btn:hover {
+            background: #45a049;
+        }
+
+        .copy-day-btn {
+            width: 100%;
+            padding: 8px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
+
+        .copy-day-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .save-config-section {
+            text-align: center;
+            padding: 20px;
+            background: var(--card-bg);
+            color: var(--text-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .save-config-btn {
+            padding: 15px 30px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin-right: 15px;
+        }
+
+        .save-config-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .save-config-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--card-bg);
+            color: var(--text-color);
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            margin: 0;
+            color: var(--primary-color);
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: var(--text-color);
+        }
+
+        .close-modal:hover {
+            color: var(--error-color);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: var(--text-color);
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            font-size: 1em;
+            background: var(--input-bg);
+            color: var(--text-color);
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            border-color: var(--input-border-focus);
+            outline: none;
+        }
+
+        /* Time picker styling for dark theme */
+        .form-group input[type="time"] {
+            background: var(--input-bg);
+            color: var(--text-color);
+            color-scheme: dark;
+        }
+
+        .form-group input[type="time"]::-webkit-calendar-picker-indicator {
+            filter: invert(1) brightness(1.5);
+            cursor: pointer;
+            opacity: 0.8;
+        }
+
+        /* Additional time picker styling for better visibility */
+        .form-group input[type="time"]::-webkit-inner-spin-button,
+        .form-group input[type="time"]::-webkit-clear-button {
+            filter: invert(1) brightness(1.5);
+        }
+
+        /* Firefox time picker styling */
+        .form-group input[type="time"] {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23ffffff'%3e%3cpath d='M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z'/%3e%3cpath d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 16px;
+        }
+
+        /* Checkbox styling */
+        .checkbox-label {
+            display: flex !important;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: normal !important;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: auto !important;
+            margin: 0;
+            flex-shrink: 0;
+        }
+
+        .checkbox-label span {
+            color: var(--text-color);
+        }
+
+        .form-group small {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9em;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .conflict-warning {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            color: #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .conflict-list {
+            margin-top: 10px;
+        }
+
+        .conflict-item {
+            padding: 5px 0;
+            border-bottom: 1px solid #f1c40f;
+        }
+
+        .conflict-item:last-child {
+            border-bottom: none;
+        }
+
+        @media (max-width: 768px) {
+            .timeslot-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .week-header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .timeslot-controls {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <%- include('../partials/header', { user }) %>
+    
+    <main class="timeslot-config-container">
+        <div class="week-header <%= !canModify ? 'locked-week' : '' %>">
+            <div class="week-navigation">
+                <% if (weekOffset > -4) { %>
+                    <a href="/admin/timeslots?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
+                        &larr; Previous
+                    </a>
+                <% } %>
+                
+                <h1 class="week-title">
+                    Timeslots for <%= weekTitle %>
+                </h1>
+                
+                <% if (weekOffset < 8) { %>
+                    <a href="/admin/timeslots?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
+                        Next &rarr;
+                    </a>
+                <% } %>
+            </div>
+            
+            <% if (canModify) { %>
+                <div class="timeslot-controls">
+                    <div class="template-selector">
+                        <label for="templateSelect">Apply Template:</label>
+                        <select id="templateSelect">
+                            <option value="">Select a template...</option>
+                            <% templates.forEach(template => { %>
+                                <option value="<%= template.id %>" <%= template.is_default ? 'data-default="true"' : '' %>>
+                                    <%= template.name %><%= template.is_default ? ' (Default)' : '' %>
+                                </option>
+                            <% }) %>
+                        </select>
+                        <button type="button" id="applyTemplateBtn" class="action-button" disabled>Apply</button>
+                    </div>
+                    
+                    <button type="button" id="copyFromLastWeekBtn" class="action-button">
+                        Copy from Last Week
+                    </button>
+                    
+                    <button type="button" id="saveAsTemplateBtn" class="action-button">
+                        Save as Template
+                    </button>
+                </div>
+            <% } %>
+        </div>
+
+        <div id="conflictWarning" class="conflict-warning" style="display: none;">
+            <strong>Warning:</strong> Changing timeslots will affect existing availability and assignments.
+            <div class="conflict-list" id="conflictList"></div>
+            <div style="margin-top: 15px;">
+                <button type="button" id="proceedWithChanges" class="btn btn-primary">Continue (Clear affected data)</button>
+                <button type="button" id="cancelChanges" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+
+        <div class="timeslot-grid">
+            <% days.forEach((day, dayIndex) => { %>
+                <div class="day-column" data-day="<%= dayIndex %>">
+                    <div class="day-header">
+                        <%= day %>
+                        <% 
+                        const dayDate = new Date(weekStart);
+                        dayDate.setDate(weekStart.getDate() + dayIndex);
+                        const dateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        %>
+                        <div style="font-size: 0.8em; font-weight: normal; opacity: 0.8;"><%= dateStr %></div>
+                    </div>
+                    <div class="day-slots" id="day-<%= dayIndex %>-slots">
+                        <% 
+                        const daySlots = weekData.timeslots[dayIndex] || [];
+                        daySlots.forEach((slot, slotIndex) => { 
+                        %>
+                            <div class="timeslot-item" data-slot-id="<%= slot.id || '' %>" data-slot-order="<%= slotIndex %>">
+                                <div class="slot-info">
+                                    <div class="slot-time"><%= slot.time %></div>
+                                    <div class="slot-label"><%= slot.label %></div>
+                                </div>
+                                <% if (canModify) { %>
+                                    <div class="slot-actions">
+                                        <button type="button" class="edit-slot" onclick="editSlot(<%= dayIndex %>, <%= slotIndex %>)" title="Edit timeslot">✏️</button>
+                                        <button type="button" class="delete-slot" onclick="deleteSlot(<%= dayIndex %>, <%= slotIndex %>)" title="Delete timeslot">✕</button>
+                                    </div>
+                                <% } %>
+                            </div>
+                        <% }) %>
+                        
+                        <% if (canModify) { %>
+                            <button type="button" class="add-slot-btn" onclick="addSlot(<%= dayIndex %>)">
+                                + Add Timeslot
+                            </button>
+                            <button type="button" class="copy-day-btn" onclick="copyDayToAll(<%= dayIndex %>)">
+                                📋 Copy to All Days
+                            </button>
+                        <% } %>
+                    </div>
+                </div>
+            <% }) %>
+        </div>
+
+        <% if (canModify) { %>
+            <div class="save-config-section">
+                <button type="button" id="saveConfigBtn" class="save-config-btn">
+                    Save Configuration
+                </button>
+                <button type="button" id="resetConfigBtn" class="btn btn-secondary">
+                    Reset to Default
+                </button>
+            </div>
+        <% } %>
+    </main>
+
+    <!-- Edit Slot Modal -->
+    <div id="editSlotModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Edit Timeslot</h3>
+                <button type="button" class="close-modal" onclick="closeModal('editSlotModal')">&times;</button>
+            </div>
+            <form id="editSlotForm">
+                <div class="form-group">
+                    <label for="slotTime">Time:</label>
+                    <input type="time" id="slotTime" name="time" required>
+                </div>
+                <div class="form-group">
+                    <label for="slotLabel">Label:</label>
+                    <input type="text" id="slotLabel" name="label" placeholder="Morning" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('editSlotModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Save as Template Modal -->
+    <div id="saveTemplateModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Save as Template</h3>
+                <button type="button" class="close-modal" onclick="closeModal('saveTemplateModal')">&times;</button>
+            </div>
+            <form id="saveTemplateForm">
+                <div class="form-group">
+                    <label for="templateName">Template Name:</label>
+                    <input type="text" id="templateName" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="templateDescription">Description (optional):</label>
+                    <textarea id="templateDescription" name="description" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="setAsDefault" name="isDefault">
+                        <span>Set as default template</span>
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('saveTemplateModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Template</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Pass server data to JavaScript
+        window.weekData = <%- JSON.stringify(weekData) %>;
+        window.weekStart = '<%= weekStart.toISOString().split('T')[0] %>';
+        window.canModify = <%= canModify %>;
+        window.templates = <%- JSON.stringify(templates) %>;
+    </script>
+    <script src="/js/header.js"></script>
+    <script src="/js/timeslot-manager.js"></script>
+</body>
+</html>

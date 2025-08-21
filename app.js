@@ -111,6 +111,13 @@ app.use('/availability', availabilityRoutes);
 const adminRoutes = require('./routes/admin')(db);
 app.use('/admin', adminRoutes);
 
+// Admin timeslot management routes (from flexible-timeslots branch)
+const adminTimeslotRoutes = require('./routes/admin/timeslots')(db);
+app.use('/admin/timeslots', adminTimeslotRoutes);
+
+const adminTemplateRoutes = require('./routes/admin/templates')(db);
+app.use('/admin/timeslot-templates', adminTemplateRoutes);
+
 // Profile routes with notification service
 app.use('/profile', (req, res, next) => {
   const profileRoutes = require('./routes/profile')(db, notificationService);

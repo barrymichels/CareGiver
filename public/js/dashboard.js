@@ -91,36 +91,20 @@ function highlightCurrentTimeslot() {
     const dayColumns = document.querySelectorAll('.day-column');
     if (!dayColumns.length) return;
 
-    // For "Next Week", always highlight the first slot of the first day (Monday 8:00am)
+    // For "Next Week", always highlight the first slot of the first day (Monday)
     if (weekTitle === 'Next Week') {
-        console.log("Next week view detected, highlighting Monday 8am slot");
+        console.log("Next week view detected, highlighting first Monday slot");
         const mondayColumn = dayColumns[0]; // Monday is the first column
         if (mondayColumn) {
-            // Find the 8:00am slot specifically
             const slots = mondayColumn.querySelectorAll('.time-slot');
-            const morningSlot = Array.from(slots).find(slot => {
-                const timeText = slot.querySelector('.time')?.textContent;
-                return timeText === '8:00am';
-            });
-
-            if (morningSlot) {
-                morningSlot.classList.add('current-slot');
-                console.log("Highlighted Monday 8:00am slot");
+            const firstSlot = slots[0];
+            if (firstSlot) {
+                firstSlot.classList.add('current-slot');
+                console.log("Highlighted first Monday slot");
 
                 // Scroll to highlighted slot on mobile
                 if (window.innerWidth <= 768) {
-                    morningSlot.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-            } else {
-                console.log("Could not find the 8:00am slot");
-                // Fallback to first slot if 8:00am not found
-                const firstSlot = slots[0];
-                if (firstSlot) {
-                    firstSlot.classList.add('current-slot');
-                    console.log("Highlighted first slot as fallback");
-                    if (window.innerWidth <= 768) {
-                        firstSlot.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
+                    firstSlot.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             }
         }
@@ -158,13 +142,28 @@ function highlightCurrentTimeslot() {
 
     const todayIndex = displayedDates.indexOf(todayColumn);
 
-    // Define time slots in 24-hour format
-    const timeSlots = [
-        { hour: 8, minute: 0 },    // 8:00am
-        { hour: 12, minute: 30 },  // 12:30pm 
-        { hour: 17, minute: 0 },   // 5:00pm
-        { hour: 21, minute: 30 }   // 9:30pm
-    ];
+    // Extract dynamic time slots from today's column
+    const timeSlots = [];
+    todayColumn.slots.forEach(slotElement => {
+        const timeText = slotElement.querySelector('.time')?.textContent;
+        if (timeText) {
+            const parsedTime = parseTime(timeText);
+            if (parsedTime) {
+                timeSlots.push({
+                    hour: parsedTime.hour,
+                    minute: parsedTime.minute,
+                    element: slotElement,
+                    timeText: timeText
+                });
+            }
+        }
+    });
+
+    // Sort slots by time
+    timeSlots.sort((a, b) => {
+        if (a.hour !== b.hour) return a.hour - b.hour;
+        return a.minute - b.minute;
+    });
 
     // Find the next upcoming slot
     let foundSlot = false;
@@ -174,19 +173,12 @@ function highlightCurrentTimeslot() {
         const slot = timeSlots[i];
         if (currentHour < slot.hour || (currentHour === slot.hour && currentMinute < slot.minute)) {
             // This slot is still upcoming today
-            const formattedTime = get12HourFormat(slot.hour, slot.minute);
-            const slotElement = todayColumn.slots.find(el =>
-                el.querySelector('.time').textContent === formattedTime
-            );
-
-            if (slotElement) {
-                slotElement.classList.add('current-slot');
-                if (window.innerWidth <= 768) {
-                    slotElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-                foundSlot = true;
-                break;
+            slot.element.classList.add('current-slot');
+            if (window.innerWidth <= 768) {
+                slot.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
+            foundSlot = true;
+            break;
         }
     }
 
@@ -215,4 +207,21 @@ function get12HourFormat(hour, minute) {
     const adjustedHour = hour > 12 ? hour - 12 : hour;
     const period = hour >= 12 ? 'pm' : 'am';
     return `${adjustedHour}:${minute.toString().padStart(2, '0')}${period}`;
+}
+
+function parseTime(timeStr) {
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})([ap]m)$/i);
+    if (!match) return null;
+    
+    let hours = parseInt(match[1]);
+    const minutes = parseInt(match[2]);
+    const period = match[3].toLowerCase();
+    
+    if (period === 'pm' && hours !== 12) {
+        hours += 12;
+    } else if (period === 'am' && hours === 12) {
+        hours = 0;
+    }
+    
+    return { hour: hours, minute: minutes };
 }

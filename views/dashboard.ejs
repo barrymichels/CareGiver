@@ -49,12 +49,19 @@
             <div class="schedule-grid">
                 <% 
                 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                const timeSlots = [
-                    { time: '8:00am', label: 'Morning' },
-                    { time: '12:30pm', label: 'Afternoon' },
-                    { time: '5:00pm', label: 'Evening' },
-                    { time: '9:30pm', label: 'Night' }
-                ];
+                
+                // Get dynamic timeslots for each day, or fall back to default if none
+                const getDayTimeSlots = (dayIndex) => {
+                    if (typeof weekData !== 'undefined' && weekData && weekData.timeslots && weekData.timeslots[dayIndex]) {
+                        return weekData.timeslots[dayIndex];
+                    }
+                    return [
+                        { time: '8:00am', label: 'Morning' },
+                        { time: '12:30pm', label: 'Afternoon' },
+                        { time: '5:00pm', label: 'Evening' },
+                        { time: '9:30pm', label: 'Night' }
+                    ];
+                };
 
                 // Generate dates for the week using weekStart
                 const weekDates = days.map((day, index) => {
@@ -71,14 +78,15 @@
                 });
                 %>
                 
-                <% weekDates.forEach(day => { %>
+                <% weekDates.forEach((day, dayIndex) => { %>
                     <div class="day-column">
                         <div class="day-header">
                             <div class="day-name"><%= day.name %></div>
                             <div class="day-date"><%= day.formatted %></div>
                         </div>
                         <div class="day-content">
-                            <% timeSlots.forEach(slot => { %>
+                            <% const dayTimeSlots = getDayTimeSlots(dayIndex); %>
+                            <% dayTimeSlots.forEach(slot => { %>
                                 <div class="time-slot">
                                     <div class="time-slot-header">
                                         <span class="time"><%= slot.time %></span>
