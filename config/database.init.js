@@ -58,6 +58,37 @@ const initializeDatabase = (db) => {
                     FOREIGN KEY (user_id) REFERENCES users(id)
                 )
             `, (err) => {
+                if (err) reject(err);
+            });
+
+            // Create notification_settings table
+            db.run(`
+                CREATE TABLE IF NOT EXISTS notification_settings (
+                    user_id INTEGER PRIMARY KEY,
+                    notification_advance_minutes INTEGER DEFAULT 15,
+                    morning_summary_enabled BOOLEAN DEFAULT 1,
+                    morning_summary_time TEXT DEFAULT '07:00',
+                    push_subscription TEXT,
+                    push_enabled BOOLEAN DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            `, (err) => {
+                if (err) reject(err);
+            });
+
+            // Create morning_summary_log table to prevent duplicate notifications
+            db.run(`
+                CREATE TABLE IF NOT EXISTS morning_summary_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    UNIQUE(user_id, date)
+                )
+            `, (err) => {
                 if (err) {
                     reject(err);
                 } else {

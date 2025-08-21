@@ -1,4 +1,4 @@
-const CACHE_NAME = 'caregiver-v1';
+const CACHE_NAME = 'caregiver-v2';
 const STATIC_ASSETS = [
     '/manifest.json',
     '/icons/icon-192x192.png',
@@ -88,3 +88,114 @@ self.addEventListener('activate', event => {
     );
     self.clients.claim();
 });
+
+// Push notification event handler
+self.addEventListener('push', event => {
+    console.log('Push event received:', event);
+
+    let notificationData = {};
+    
+    if (event.data) {
+        try {
+            notificationData = event.data.json();
+        } catch (error) {
+            console.error('Error parsing push notification data:', error);
+            notificationData = {
+                title: 'WayneScheduler',
+                body: 'You have a new notification',
+                icon: '/icons/icon-192x192.png'
+            };
+        }
+    } else {
+        notificationData = {
+            title: 'WayneScheduler',
+            body: 'You have a new notification',
+            icon: '/icons/icon-192x192.png'
+        };
+    }
+
+    const options = {
+        body: notificationData.body,
+        icon: notificationData.icon || '/icons/icon-192x192.png',
+        badge: notificationData.badge || '/icons/icon-192x192.png',
+        data: notificationData.data || {},
+        actions: notificationData.actions || [],
+        requireInteraction: false,
+        silent: false,
+        tag: notificationData.data?.type || 'general'
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(notificationData.title, options)
+    );
+});
+
+// Notification click event handler
+self.addEventListener('notificationclick', event => {
+    console.log('Notification clicked:', event);
+
+    const notification = event.notification;
+    const action = event.action;
+    const data = notification.data || {};
+
+    // Close the notification
+    notification.close();
+
+    let targetUrl = '/dashboard'; // Default URL
+
+    // Handle different notification types
+    if (data.url) {
+        targetUrl = data.url;
+    } else if (data.type === 'shift_reminder') {
+        targetUrl = '/dashboard';
+    } else if (data.type === 'morning_summary') {
+        targetUrl = '/dashboard';
+    }
+
+    // Handle notification actions
+    if (action === 'view') {
+        targetUrl = data.url || '/dashboard';
+    }
+
+    // Focus on existing window or open new one
+    event.waitUntil(
+        clients.matchAll({
+            type: 'window',
+            includeUncontrolled: true
+        }).then(clientList => {
+            // Check if there's already a window open to the target URL
+            for (const client of clientList) {
+                if (client.url === targetUrl && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+
+            // Check if there's any window open to the app
+            for (const client of clientList) {
+                if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+                    return client.navigate(targetUrl).then(() => client.focus());
+                }
+            }
+
+            // No suitable window found, open a new one
+            if (clients.openWindow) {
+                return clients.openWindow(targetUrl);
+            }
+        })
+    );
+});
+
+// Background sync for offline notification handling (optional enhancement)
+self.addEventListener('sync', event => {
+    if (event.tag === 'notification-sync') {
+        event.waitUntil(
+            // Handle any queued notifications when back online
+            handleOfflineNotifications()
+        );
+    }
+});
+
+async function handleOfflineNotifications() {
+    // This could be enhanced to handle notifications that were queued while offline
+    console.log('Handling offline notifications...');
+}

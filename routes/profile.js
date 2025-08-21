@@ -4,7 +4,7 @@ const bcrypt = require('bcrypt');
 const { isAuthenticated, isActive } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 
-module.exports = function(db) {
+module.exports = function(db, notificationService) {
     const dbHelper = new DatabaseHelper(db);
 
     // Get profile
@@ -29,13 +29,20 @@ module.exports = function(db) {
                 );
             });
 
+            // Get notification preferences
+            let notificationPreferences = null;
+            if (notificationService) {
+                notificationPreferences = await notificationService.getNotificationPreferences(req.user.id);
+            }
+
             return res.render('profile', { 
                 user: {
                     ...req.user,
                     first_name: user.first_name,
                     last_name: user.last_name,
                     email: user.email
-                }
+                },
+                notificationPreferences
             });
         } catch (error) {
             console.error('Error getting profile:', error);

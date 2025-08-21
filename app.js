@@ -11,8 +11,10 @@ const SQLiteStore = require('connect-sqlite3')(session);
 const configureDatabase = require('./config/database');
 const initializeDatabase = require('./config/database.init');
 const { getPageTitle } = require('./utils/title');
+const NotificationService = require('./services/notificationService');
 
 const app = express();
+let notificationService = null;
 
 // Database connection and initialization first
 const db = configureDatabase(process.env.DB_PATH);
@@ -23,10 +25,15 @@ require('./config/oauth2')(passport, db);
 // Make getPageTitle available to all views
 app.locals.getPageTitle = getPageTitle;
 
-// Initialize database tables
+// Initialize database tables and notification service
 (async () => {
   try {
     await initializeDatabase(db);
+    console.log('✅ Database initialized successfully');
+    
+    // Initialize notification service after database is ready
+    notificationService = new NotificationService(db);
+    console.log('✅ Notification service initialized');
   } catch (err) {
     console.error('Failed to initialize database:', err);
     process.exit(1);
@@ -104,8 +111,20 @@ app.use('/availability', availabilityRoutes);
 const adminRoutes = require('./routes/admin')(db);
 app.use('/admin', adminRoutes);
 
-const profileRoutes = require('./routes/profile')(db);
-app.use('/profile', profileRoutes);
+// Profile routes with notification service
+app.use('/profile', (req, res, next) => {
+  const profileRoutes = require('./routes/profile')(db, notificationService);
+  profileRoutes(req, res, next);
+});
+
+// Notification API routes
+app.use('/api/notifications', (req, res, next) => {
+  if (!notificationService) {
+    return res.status(503).json({ error: 'Notification service not ready' });
+  }
+  const notificationRoutes = require('./routes/notifications')(db, notificationService);
+  notificationRoutes(req, res, next);
+});
 
 const userRoutes = require('./routes/users')(db);
 app.use('/users', userRoutes);
@@ -139,6 +158,54 @@ app.use((err, req, res, next) => {
 
   // Send JSON response for errors
   res.status(500).json({ error: 'Server error' });
+});
+
+// Graceful shutdown handling
+function gracefulShutdown(signal) {
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+  
+  if (notificationService) {
+    try {
+      notificationService.stop();
+      console.log('✅ Notification service stopped');
+    } catch (error) {
+      console.error('❌ Error stopping notification service:', error);
+    }
+  }
+  
+  if (db) {
+    try {
+      db.close((err) => {
+        if (err) {
+          console.error('❌ Error closing database:', err);
+        } else {
+          console.log('✅ Database connection closed');
+        }
+        process.exit(0);
+      });
+    } catch (error) {
+      console.error('❌ Error during database shutdown:', error);
+      process.exit(1);
+    }
+  } else {
+    process.exit(0);
+  }
+}
+
+// Handle various shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  gracefulShutdown('UNCAUGHT_EXCEPTION');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('UNHANDLED_REJECTION');
 });
 
 // Move server creation to a separate function

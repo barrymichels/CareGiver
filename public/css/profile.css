@@ -189,4 +189,174 @@
     margin-bottom: 1.5rem;
     font-size: 1.5rem;
     color: var(--text-color);
+}
+
+/* Notification Settings */
+.notification-settings {
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--input-border);
+}
+
+.notification-settings h2 {
+    font-size: 1.25rem;
+    margin-bottom: 1.5rem;
+    color: var(--text-color);
+}
+
+.notification-form {
+    max-width: 500px;
+}
+
+.input-with-unit {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.input-with-unit input {
+    flex: 0 0 auto;
+    width: 80px;
+}
+
+.input-with-unit .unit {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.help-text {
+    display: block;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+/* Custom checkbox styling */
+.checkbox-label {
+    display: flex !important;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    padding-left: 2rem;
+    margin-bottom: 0 !important;
+}
+
+.checkbox-label input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    width: 0;
+    height: 0;
+}
+
+.checkbox-label .checkmark {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 18px;
+    width: 18px;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.checkbox-label:hover input ~ .checkmark {
+    border-color: var(--primary-color);
+}
+
+.checkbox-label input:checked ~ .checkmark {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.checkbox-label .checkmark:after {
+    content: "";
+    position: absolute;
+    display: none;
+}
+
+.checkbox-label input:checked ~ .checkmark:after {
+    display: block;
+}
+
+.checkbox-label .checkmark:after {
+    left: 5px;
+    top: 1px;
+    width: 6px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* Push notification control */
+.push-notification-control {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.push-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    max-width: 300px;
+}
+
+.push-btn:hover {
+    border-color: var(--primary-color);
+    background-color: var(--card-bg);
+}
+
+.push-btn.enabled {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+.push-btn.enabled:hover {
+    background-color: var(--primary-hover);
+}
+
+.push-status {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    background-color: var(--input-border);
+    color: var(--text-muted);
+}
+
+.push-btn.enabled .push-status {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* Responsive adjustments for notification settings */
+@media (max-width: 768px) {
+    .notification-settings {
+        margin-top: 2rem;
+        padding-top: 1.5rem;
+    }
+    
+    .input-with-unit {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+    
+    .input-with-unit input {
+        width: 100%;
+    }
+    
+    .push-btn {
+        max-width: 100%;
+    }
 } 

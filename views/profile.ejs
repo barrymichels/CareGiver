@@ -41,6 +41,57 @@
                     <button type="button" id="changePasswordBtn" class="secondary-btn">Change Password</button>
                 </div>
             </form>
+
+            <!-- Notification Settings Section -->
+            <div class="notification-settings">
+                <h2>Notification Settings</h2>
+                
+                <form id="notification-form" class="notification-form">
+                    <div class="form-group">
+                        <label for="notificationAdvance">Notify me before shifts</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="notificationAdvance" name="notificationAdvanceMinutes" 
+                                   value="<%= notificationPreferences ? notificationPreferences.notification_advance_minutes : 15 %>"
+                                   min="5" max="120" step="5" required>
+                            <span class="unit">minutes before</span>
+                        </div>
+                        <small class="help-text">Get notified 5-120 minutes before your shifts</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="morningSummaryEnabled" name="morningSummaryEnabled"
+                                   <%= notificationPreferences && notificationPreferences.morning_summary_enabled ? 'checked' : '' %>>
+                            <span class="checkmark"></span>
+                            Enable daily morning summaries
+                        </label>
+                    </div>
+                    
+                    <div class="form-group" id="morningSummaryTimeGroup" 
+                         style="<%= notificationPreferences && notificationPreferences.morning_summary_enabled ? '' : 'display: none;' %>">
+                        <label for="morningSummaryTime">Morning summary time</label>
+                        <input type="time" id="morningSummaryTime" name="morningSummaryTime" 
+                               value="<%= notificationPreferences ? notificationPreferences.morning_summary_time : '07:00' %>">
+                        <small class="help-text">When to receive your daily schedule summary</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="push-notification-control">
+                            <button type="button" id="enablePushBtn" class="push-btn">
+                                <span id="pushBtnText">Enable Push Notifications</span>
+                                <span id="pushBtnStatus" class="push-status">
+                                    <%= notificationPreferences && notificationPreferences.push_enabled ? 'Enabled' : 'Disabled' %>
+                                </span>
+                            </button>
+                            <small class="help-text">Allow this app to send push notifications to your device</small>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="submit-btn">Save Notification Settings</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </main>
 
