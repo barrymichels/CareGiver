@@ -193,6 +193,13 @@ class NotificationService {
             // Convert 24-hour time to 12-hour format for comparison with database
             const check12Hour = this.formatTo12Hour(checkTimeStr);
 
+            if (process.env.NOTIFICATION_DEBUG === 'true') {
+                console.log(`🔍 Checking shifts for ${user.first_name} ${user.last_name}:`);
+                console.log(`   Current time: ${now.toTimeString().slice(0, 5)}`);
+                console.log(`   Check time (+${user.notification_advance_minutes}min): ${checkTimeStr} / ${check12Hour}`);
+                console.log(`   Check date: ${checkDate}`);
+            }
+
             const assignments = await new Promise((resolve, reject) => {
                 this.db.all(
                     `SELECT day_date, time_slot FROM assignments 
@@ -204,6 +211,11 @@ class NotificationService {
                     }
                 );
             });
+
+            if (process.env.NOTIFICATION_DEBUG === 'true' && assignments.length > 0) {
+                console.log(`   Found ${assignments.length} upcoming assignments:`);
+                assignments.forEach(a => console.log(`     - ${a.day_date} at ${a.time_slot}`));
+            }
 
             for (const assignment of assignments) {
                 await this.sendShiftReminder(user, assignment);
@@ -223,9 +235,11 @@ class NotificationService {
 
     async sendShiftReminder(user, assignment) {
         try {
+            const eventSummary = process.env.ICS_EVENT_SUMMARY || 'CareGiver Shift';
+            
             const payload = {
-                title: '⏰ Upcoming Shift',
-                body: `Your shift starts in ${user.notification_advance_minutes} minutes at ${assignment.time_slot}`,
+                title: `⏰ Reminder`,
+                body: `Reminder to ${eventSummary} at ${assignment.time_slot}`,
                 icon: '/icons/icon-192x192.png',
                 badge: '/icons/icon-192x192.png',
                 data: {
@@ -243,7 +257,7 @@ class NotificationService {
             };
 
             await this.sendPushNotification(user.push_subscription, payload);
-            console.log(`📨 Shift reminder sent to ${user.first_name} ${user.last_name}`);
+            console.log(`📨 ${eventSummary} reminder sent to ${user.first_name} ${user.last_name}`);
         } catch (error) {
             console.error('Error sending shift reminder:', error);
         }
