@@ -186,16 +186,17 @@ class NotificationService {
             const now = new Date();
             const checkTime = new Date(now.getTime() + (user.notification_advance_minutes * 60 * 1000));
             
-            // Format date and time for SQLite comparison
-            const checkDate = checkTime.toISOString().split('T')[0];
-            const checkTimeStr = checkTime.toTimeString().slice(0, 5);
+            // Use local time for comparison (assignments are stored in local time)
+            const checkDate = this.formatLocalDate(checkTime);
+            const checkTimeStr = this.formatLocalTime(checkTime);
             
             // Convert 24-hour time to 12-hour format for comparison with database
             const check12Hour = this.formatTo12Hour(checkTimeStr);
 
             if (process.env.NOTIFICATION_DEBUG === 'true') {
                 console.log(`🔍 Checking shifts for ${user.first_name} ${user.last_name}:`);
-                console.log(`   Current time: ${now.toTimeString().slice(0, 5)}`);
+                console.log(`   Current time (UTC): ${now.toTimeString().slice(0, 5)}`);
+                console.log(`   Current time (Local): ${this.formatLocalTime(now)}`);
                 console.log(`   Check time (+${user.notification_advance_minutes}min): ${checkTimeStr} / ${check12Hour}`);
                 console.log(`   Check date: ${checkDate}`);
             }
@@ -233,6 +234,21 @@ class NotificationService {
         return `${hour12}:${minutes}${ampm}`;
     }
 
+    formatLocalDate(date) {
+        // Format as YYYY-MM-DD in local timezone
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    formatLocalTime(date) {
+        // Format as HH:MM in local timezone
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+    }
+
     async sendShiftReminder(user, assignment) {
         try {
             const eventSummary = process.env.ICS_EVENT_SUMMARY || 'CareGiver Shift';
@@ -268,10 +284,10 @@ class NotificationService {
 
         try {
             const now = new Date();
-            const currentTime = now.toTimeString().slice(0, 5);
+            const currentTime = this.formatLocalTime(now);
             const currentHour = now.getHours();
             const currentMinute = now.getMinutes();
-            const today = now.toISOString().split('T')[0];
+            const today = this.formatLocalDate(now);
 
             // Get users who want morning summaries at this time (with 5-minute window)
             const users = await new Promise((resolve, reject) => {
