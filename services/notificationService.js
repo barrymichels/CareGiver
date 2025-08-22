@@ -189,12 +189,15 @@ class NotificationService {
             // Format date and time for SQLite comparison
             const checkDate = checkTime.toISOString().split('T')[0];
             const checkTimeStr = checkTime.toTimeString().slice(0, 5);
+            
+            // Convert 24-hour time to 12-hour format for comparison with database
+            const check12Hour = this.formatTo12Hour(checkTimeStr);
 
             const assignments = await new Promise((resolve, reject) => {
                 this.db.all(
                     `SELECT day_date, time_slot FROM assignments 
-                     WHERE user_id = ? AND day_date = ? AND time_slot = ?`,
-                    [user.user_id, checkDate, checkTimeStr],
+                     WHERE user_id = ? AND day_date = ? AND (time_slot = ? OR time_slot = ?)`,
+                    [user.user_id, checkDate, checkTimeStr, check12Hour],
                     (err, rows) => {
                         if (err) reject(err);
                         else resolve(rows || []);
@@ -208,6 +211,14 @@ class NotificationService {
         } catch (error) {
             console.error(`Error checking shifts for user ${user.user_id}:`, error);
         }
+    }
+
+    formatTo12Hour(time24) {
+        const [hours, minutes] = time24.split(':');
+        const hour = parseInt(hours);
+        const ampm = hour >= 12 ? 'pm' : 'am';
+        const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+        return `${hour12}:${minutes}${ampm}`;
     }
 
     async sendShiftReminder(user, assignment) {
@@ -393,15 +404,38 @@ class NotificationService {
                 }
             };
 
-            await webpush.sendNotification(subscription, JSON.stringify(payload), options);
+            if (process.env.NOTIFICATION_DEBUG === 'true') {
+                console.log('🚀 Attempting to send push notification:', {
+                    endpoint: subscription.endpoint,
+                    title: payload.title,
+                    body: payload.body
+                });
+            }
+
+            const result = await webpush.sendNotification(subscription, JSON.stringify(payload), options);
+            
+            if (process.env.NOTIFICATION_DEBUG === 'true') {
+                console.log('✅ Push notification sent successfully:', result.statusCode || 'OK');
+            }
+            
             return true;
         } catch (error) {
-            console.error('Error sending push notification:', error);
+            console.error('❌ Error sending push notification:', {
+                message: error.message,
+                statusCode: error.statusCode,
+                headers: error.headers,
+                body: error.body,
+                endpoint: subscriptionData?.endpoint || 'unknown'
+            });
             
             // If subscription is invalid, disable it
             if (error.statusCode === 410) {
-                console.log('Push subscription expired, disabling...');
+                console.log('📱 Push subscription expired, disabling...');
                 // TODO: Remove invalid subscription from database
+            } else if (error.statusCode === 400) {
+                console.log('📱 Invalid push request - check subscription format');
+            } else if (error.statusCode === 413) {
+                console.log('📱 Payload too large');
             }
             
             return false;
