@@ -106,10 +106,6 @@
 }
 
 .week-header {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    gap: 1rem;
     margin-bottom: 0.5rem;
     padding: 0;
 }
@@ -581,35 +577,6 @@
     }
 }
 
-/* In public/css/dashboard.css */
-.week-header {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 0.5rem;
-}
-
-.week-title {
-    text-align: center;
-    margin: 0;
-    grid-column: 2;
-    justify-self: center;
-}
-
-.availability-controls {
-    display: flex;
-    gap: 0.5rem;
-    grid-column: 1;
-    justify-self: start;
-}
-
-.week-navigation {
-    display: flex;
-    gap: 0.5rem;
-    grid-column: 3;
-    justify-self: end;
-}
 
 #exportCalendar {
     padding: 0.4rem 0.8rem;
@@ -649,35 +616,6 @@
     justify-self: end;
 }
 
-/* Mobile responsive styles */
-@media (max-width: 768px) {
-    .week-controls {
-        grid-template-columns: 1fr;
-        gap: 1rem;
-    }
-
-    .week-navigation {
-        justify-content: center;
-        grid-row: 3;
-    }
-
-    .week-title {
-        grid-row: 1;
-        grid-column: 1;
-        text-align: center;
-    }
-
-    #exportCalendar {
-        grid-row: 2;
-        grid-column: 1;
-        justify-self: center;
-    }
-
-    .nav-button {
-        flex: 1;
-        min-width: auto;
-    }
-}
 
 .time-slot.current-slot {
     border: 2px solid var(--primary-color);
@@ -688,13 +626,6 @@
     background-color: rgba(100, 108, 255, 0.1);
 }
 
-.week-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    padding: 1rem;
-    margin-bottom: 1rem;
-}
 
 .week-actions {
     display: flex;
@@ -736,20 +667,8 @@
     background-color: var(--primary-hover);
 }
 
-/* Mobile styles */
-@media (max-width: 768px) {
-    .availability-section .section-header {
-        flex-direction: column;
-        gap: 1rem;
-        text-align: center;
-    }
 
-    .availability-controls {
-        width: 100%;
-        justify-content: center;
-    }
-}
-
+/* Week Controls Layout - Main Grid System */
 .week-controls {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -765,6 +684,7 @@
     white-space: nowrap;
 }
 
+.left-controls,
 .availability-controls {
     display: flex;
     gap: 0.5rem;
@@ -777,6 +697,41 @@
     gap: 0.5rem;
     grid-column: 3;
     justify-self: end;
+}
+
+/* Mobile responsive layout for week controls */
+@media (max-width: 768px) {
+    .week-controls {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
+        gap: 1rem;
+    }
+
+    .week-title {
+        grid-column: 1;
+        grid-row: 1;
+        text-align: center;
+    }
+
+    .left-controls,
+    .availability-controls {
+        grid-column: 1;
+        grid-row: 2;
+        justify-self: center;
+    }
+
+    .week-navigation {
+        grid-column: 1;
+        grid-row: 3;
+        justify-self: center;
+        gap: 1rem;
+    }
+
+    .nav-button {
+        flex: 1;
+        min-width: 100px;
+        text-align: center;
+    }
 }
 
 .availability-section {

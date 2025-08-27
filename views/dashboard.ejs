@@ -21,12 +21,14 @@
         <div class="week-view">
             <div class="week-header">
                 <div class="week-controls">
-                    <% if (weekOffset === 0) { %>
-                        <button id="exportCalendar" class="action-button" title="Export this week's events to your calendar">
-                            <span class="calendar-icon">📅</span>
-                            Add to calendar
-                        </button>
-                    <% } %>
+                    <div class="left-controls">
+                        <% if (weekOffset === 0) { %>
+                            <button id="exportCalendar" class="action-button" title="Export this week's events to your calendar">
+                                <span class="calendar-icon">📅</span>
+                                Add to calendar
+                            </button>
+                        <% } %>
+                    </div>
                     
                     <h2 class="week-title"><%= weekTitle %></h2>
                     
