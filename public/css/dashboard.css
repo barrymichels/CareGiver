@@ -739,6 +739,13 @@
         font-size: 0.9rem;
         padding: 0.5rem 0.75rem;
     }
+
+    /* Override availability section header for mobile */
+    .availability-section .section-header {
+        display: block;
+        align-items: initial;
+        justify-content: initial;
+    }
 }
 
 .availability-section {
