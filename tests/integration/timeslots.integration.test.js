@@ -327,8 +327,10 @@ describe('Timeslots Integration Tests', () => {
         it('should handle duplicate slots detection', async () => {
             // Test duplicate slots - this should be caught by route validation
             // TimeslotManager itself accepts the data as provided
+            const futureDate = new Date();
+            futureDate.setDate(futureDate.getDate() + 14); // 2 weeks in future
             const config = await timeslotManager.createTimeslotConfiguration(
-                new Date('2025-07-01'),
+                timeslotManager.getWeekStart(futureDate),
                 [
                     { day_of_week: 0, time: '8:00am', label: 'Morning 1', slot_order: 0 },
                     { day_of_week: 0, time: '8:00am', label: 'Morning 2', slot_order: 1 }

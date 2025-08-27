@@ -88,8 +88,13 @@ module.exports = (db) => {
                     hour = 0;
                 }
 
-                // Create start date
-                const startDate = new Date(assignment.day_date);
+                // Create start date - parse as local timezone to avoid UTC offset issues
+                const dateComponents = assignment.day_date.split('-');
+                const startDate = new Date(
+                    parseInt(dateComponents[0]), // year
+                    parseInt(dateComponents[1]) - 1, // month (0-based)
+                    parseInt(dateComponents[2]) // day
+                );
                 startDate.setHours(hour, parseInt(minutes), 0, 0);
 
                 // Create end date (15 minutes later)
