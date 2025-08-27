@@ -702,35 +702,42 @@
 /* Mobile responsive layout for week controls */
 @media (max-width: 768px) {
     .week-controls {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto auto auto;
+        display: flex;
+        flex-direction: column;
         gap: 1rem;
+        align-items: center;
+        width: 100%;
     }
 
     .week-title {
-        grid-column: 1;
-        grid-row: 1;
+        order: 1;
         text-align: center;
+        margin: 0;
+        width: 100%;
     }
 
     .left-controls,
     .availability-controls {
-        grid-column: 1;
-        grid-row: 2;
-        justify-self: center;
+        order: 2;
+        justify-content: center;
+        width: 100%;
     }
 
     .week-navigation {
-        grid-column: 1;
-        grid-row: 3;
-        justify-self: center;
+        order: 3;
+        justify-content: center;
+        width: 100%;
+        max-width: 300px;
         gap: 1rem;
     }
 
     .nav-button {
         flex: 1;
-        min-width: 100px;
+        min-width: 120px;
+        max-width: 140px;
         text-align: center;
+        font-size: 0.9rem;
+        padding: 0.5rem 0.75rem;
     }
 }
 
