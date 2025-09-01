@@ -120,7 +120,7 @@ self.addEventListener('push', event => {
         badge: notificationData.badge || '/icons/icon-192x192.png',
         data: notificationData.data || {},
         actions: notificationData.actions || [],
-        requireInteraction: false,
+        requireInteraction: true, // Keep notification visible until user interacts
         silent: false,
         tag: notificationData.data?.type || 'general'
     };

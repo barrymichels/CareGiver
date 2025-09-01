@@ -264,12 +264,7 @@ class NotificationService {
                     time: assignment.time_slot,
                     url: '/dashboard'
                 },
-                actions: [
-                    {
-                        action: 'view',
-                        title: 'View Schedule'
-                    }
-                ]
+                actions: []
             };
 
             await this.sendPushNotification(user.push_subscription, payload);
@@ -400,12 +395,7 @@ class NotificationService {
                     date,
                     url: '/dashboard'
                 },
-                actions: [
-                    {
-                        action: 'view',
-                        title: 'View Dashboard'
-                    }
-                ]
+                actions: []
             };
 
             await this.sendPushNotification(user.push_subscription, payload);
@@ -427,6 +417,7 @@ class NotificationService {
 
             const options = {
                 TTL: 3600, // 1 hour
+                urgency: 'high', // High priority for immediate delivery
                 vapidDetails: {
                     subject: process.env.VAPID_EMAIL || 'mailto:admin@example.com',
                     publicKey: process.env.VAPID_PUBLIC_KEY,
