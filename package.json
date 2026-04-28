@@ -20,7 +20,6 @@
     "connect-sqlite3": "^0.9.15",
     "dotenv": "^16.0.3",
     "ejs": "^3.1.10",
-    "ejs-locals": "^1.0.2",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "node-cron": "^3.0.2",
