@@ -118,6 +118,20 @@ describe('Weekly schedule templates', () => {
         expect(controls.text).toContain(`window.weekStart = '${nextKey}'`);
     });
 
+    it.each([false, true])('applies a new template without blending times across days (Tuesday keeps original times: %s)', async keepTuesday => {
+        await request(app).get('/availability').query({ weekOffset: 1 }).expect(200);
+        const slots = Array.from({ length: 7 }, (_, day) => keepTuesday && day === 1
+            ? manager.getFallbackTimeslots()[day]
+            : [slot('9:00am', 0, day), slot('6:30pm', 1, day)]).flat();
+        const template = await request(app).post('/admin/timeslot-templates')
+            .send({ name: 'Two daily visits', slots }).expect(200);
+        await request(app).post('/admin/timeslots/apply-template')
+            .send({ weekStart: nextKey, templateId: template.body.data.id }).expect(200);
+        const availability = await request(app).get('/availability').query({ weekOffset: 1 }).expect(200);
+        const times = [...availability.text.matchAll(/data-time="([^"]+)"/g)].map(match => match[1]);
+        expect(times).toEqual(slots.map(slot => slot.time));
+    });
+
     it.each(['apply', 'legacy-apply', 'update', 'create', 'copy', 'reset'])('%s requires confirmation before removing occupied slots', async action => {
         const saved = await manager.createTimeslotConfiguration(nextWeek, [slot('8:00am'), slot('9:00am', 1)], user.id);
         await assign(nextKey, '9:00am', saved.timeslots[0][1].id);
