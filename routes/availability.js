@@ -57,23 +57,12 @@ module.exports = function (db) {
             // Get dynamic timeslots for the week
             const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
             
-            // Convert grouped timeslots to flat array for backward compatibility
-            const timeSlots = [];
-            for (let day = 0; day < 7; day++) {
-                const daySlots = weekData.timeslots[day] || [];
-                daySlots.forEach(slot => {
-                    if (!timeSlots.find(ts => ts.time === slot.time)) {
-                        timeSlots.push({ time: slot.time, label: slot.label });
-                    }
-                });
-            }
-            
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
             res.render('availability', {
                 user: req.user,
                 userAvailability: availability,
-                timeSlots,
+                weekData,
                 days,
                 weekOffset: limitedOffset,
                 weekTitle,
@@ -105,6 +94,7 @@ module.exports = function (db) {
 
         try {
             await dbHelper.withTransaction(async () => {
+                await timeslotManager.validateScheduledSlots(availability);
                 // Insert new availability, using REPLACE to handle any duplicates
                 for (const slot of availability) {
                     await dbHelper.runWithRetry(
@@ -131,7 +121,7 @@ module.exports = function (db) {
             res.json({ message: 'Availability updated successfully' });
         } catch (error) {
             console.error('Availability update error:', error);
-            res.status(500).json({ error: 'Server error' });
+            res.status(error.status || 500).json({ error: error.status ? error.message : 'Server error' });
         }
     });
 

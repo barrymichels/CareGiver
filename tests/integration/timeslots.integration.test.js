@@ -293,7 +293,7 @@ describe('Timeslots Integration Tests', () => {
             // No default template exists, should return fallback
             const weekData = await timeslotManager.getTimeslotsForWeek(futureWeekStart);
             
-            expect(weekData.config).toBeNull();
+            expect(weekData.config).toMatchObject({ uses_default: 1, template_name: 'Default Schedule' });
             expect(weekData.timeslots).toBeTruthy();
             // Should get fallback timeslots (original 4 slots)
             expect(weekData.timeslots[0]).toHaveLength(4);

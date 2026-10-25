@@ -6,6 +6,7 @@
 let currentTimeslots = {};
 let isDirty = false;
 let currentEditSlot = null;
+let pendingChange = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize current timeslots from server data
@@ -13,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize event listeners
     initializeEventListeners();
+    markClean();
     
     // Enable/disable controls based on modification permission
     if (!window.canModify) {
@@ -26,6 +28,7 @@ function initializeEventListeners() {
     const applyTemplateBtn = document.getElementById('applyTemplateBtn');
     
     if (templateSelect) {
+        applyTemplateBtn.disabled = !templateSelect.value;
         templateSelect.addEventListener('change', () => {
             applyTemplateBtn.disabled = !templateSelect.value;
         });
@@ -48,7 +51,7 @@ function initializeEventListeners() {
     
     const saveConfigBtn = document.getElementById('saveConfigBtn');
     if (saveConfigBtn) {
-        saveConfigBtn.addEventListener('click', saveConfiguration);
+        saveConfigBtn.addEventListener('click', () => saveConfiguration());
     }
     
     const resetConfigBtn = document.getElementById('resetConfigBtn');
@@ -72,13 +75,16 @@ function initializeEventListeners() {
     if (proceedWithChanges) {
         proceedWithChanges.addEventListener('click', () => {
             document.getElementById('conflictWarning').style.display = 'none';
-            saveConfiguration(true); // Force save ignoring conflicts
+            const proceed = pendingChange;
+            pendingChange = null;
+            if (proceed) proceed();
         });
     }
     
     const cancelChanges = document.getElementById('cancelChanges');
     if (cancelChanges) {
         cancelChanges.addEventListener('click', () => {
+            pendingChange = null;
             document.getElementById('conflictWarning').style.display = 'none';
         });
     }
@@ -333,8 +339,8 @@ function renderDay(dayIndex) {
         
         slotElement.innerHTML = `
             <div class="slot-info">
-                <div class="slot-time">${slot.time}</div>
-                <div class="slot-label">${slot.label}</div>
+                <div class="slot-time"></div>
+                <div class="slot-label"></div>
             </div>
             ${window.canModify ? `
                 <div class="slot-actions">
@@ -344,6 +350,8 @@ function renderDay(dayIndex) {
             ` : ''}
         `;
         
+        slotElement.querySelector('.slot-time').textContent = slot.time;
+        slotElement.querySelector('.slot-label').textContent = slot.label;
         dayContainer.insertBefore(slotElement, addButton);
     });
     
@@ -358,85 +366,68 @@ function renderDay(dayIndex) {
     }
 }
 
-async function applySelectedTemplate() {
-    const templateSelect = document.getElementById('templateSelect');
-    const templateId = templateSelect.value;
-    
-    if (!templateId) return;
-    
+// Every action uses the same conflict preview and explicit retry.
+async function saveWeekRequest(url, method, body, message) {
     try {
-        const response = await fetch(`/admin/timeslot-templates/${templateId}/apply`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                weekStart: window.weekStart
-            })
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
         });
-        
         const result = await response.json();
-        
-        if (response.ok) {
-            // Update current timeslots
-            currentTimeslots = result.data.timeslots;
-            
-            // Re-render all days
-            for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-                renderDay(dayIndex);
-            }
-            
-            markClean();
-            showToast('Template applied successfully');
-        } else {
-            showToast(result.error || 'Failed to apply template', 'error');
+        if (response.status === 409 && result.conflicts) {
+            pendingChange = () => saveWeekRequest(url, method, { ...body, ignoreConflicts: true }, message);
+            showConflictWarning(result.conflicts);
+            return;
         }
+        if (!response.ok) {
+            showToast(result.error || 'Failed to save schedule', 'error');
+            return;
+        }
+        window.weekData = result.data;
+        currentTimeslots = result.data.timeslots;
+        for (let day = 0; day < 7; day++) renderDay(day);
+        pendingChange = null;
+        document.getElementById('conflictWarning').style.display = 'none';
+        const config = result.data.config;
+        document.getElementById('scheduleSource').textContent =
+            `Saved schedule: ${config.template_name || 'Custom schedule'}${config.uses_default ? ' (from default)' : ''}. Template changes do not alter this week's saved times.`;
+        const select = document.getElementById('templateSelect');
+        if (!config.uses_default && !config.template_id && !select.querySelector('option[value=""]')) {
+            select.add(new Option('Custom schedule', ''));
+        }
+        select.value = config.uses_default ? 'default' : (config.template_id || '');
+        document.getElementById('applyTemplateBtn').disabled = !select.value;
+        markClean();
+        showToast(message);
     } catch (error) {
-        console.error('Error applying template:', error);
-        showToast('Failed to apply template', 'error');
+        console.error('Error saving schedule:', error);
+        showToast('Failed to save schedule', 'error');
     }
+}
+
+async function applySelectedTemplate() {
+    const value = document.getElementById('templateSelect').value;
+    if (!value) return;
+    if (isDirty && !confirm('Apply this template to the displayed week and replace unsaved changes?')) return;
+    return saveWeekRequest('/admin/timeslots/apply-template', 'POST', {
+        weekStart: window.weekStart,
+        templateId: value === 'default' ? null : Number(value)
+    }, 'Template saved for this week');
 }
 
 async function copyFromLastWeek() {
-    const currentWeekStart = new Date(window.weekStart);
-    const lastWeekStart = new Date(currentWeekStart);
-    lastWeekStart.setDate(currentWeekStart.getDate() - 7);
-    
-    try {
-        const response = await fetch('/admin/timeslots/copy', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                targetWeekStart: window.weekStart,
-                sourceWeekStart: lastWeekStart.toISOString().split('T')[0]
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            // Update current timeslots
-            currentTimeslots = result.data.timeslots;
-            
-            // Re-render all days
-            for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-                renderDay(dayIndex);
-            }
-            
-            markClean();
-            showToast('Timeslots copied from last week successfully');
-        } else {
-            showToast(result.error || 'Failed to copy from last week', 'error');
-        }
-    } catch (error) {
-        console.error('Error copying from last week:', error);
-        showToast('Failed to copy from last week', 'error');
-    }
+    if (isDirty && !confirm('Copy last week and replace unsaved changes?')) return;
+    const lastWeek = new Date(`${window.weekStart}T00:00:00Z`);
+    lastWeek.setUTCDate(lastWeek.getUTCDate() - 7);
+    return saveWeekRequest('/admin/timeslots/copy', 'POST', {
+        targetWeekStart: window.weekStart,
+        sourceWeekStart: lastWeek.toISOString().slice(0, 10)
+    }, 'Timeslots copied from last week');
 }
 
-async function saveConfiguration(ignoreConflicts = false) {
+async function saveConfiguration() {
+    if (!isDirty) return;
     // Convert current timeslots to API format
     const slots = [];
     for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
@@ -456,104 +447,37 @@ async function saveConfiguration(ignoreConflicts = false) {
         return;
     }
     
-    const requestBody = {
-        weekStart: window.weekStart,
-        slots,
-        ignoreConflicts
-    };
-    
-    try {
-        const method = window.weekData.config ? 'PUT' : 'POST';
-        const url = window.weekData.config 
-            ? `/admin/timeslots/${window.weekData.config.id}`
-            : '/admin/timeslots';
-        
-        const response = await fetch(url, {
-            method,
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            markClean();
-            showToast('Configuration saved successfully');
-            
-            // Update window data
-            window.weekData = result.data;
-        } else if (response.status === 409 && result.conflicts) {
-            // Show conflict warning
-            showConflictWarning(result.conflicts);
-        } else {
-            showToast(result.error || 'Failed to save configuration', 'error');
-        }
-    } catch (error) {
-        console.error('Error saving configuration:', error);
-        showToast('Failed to save configuration', 'error');
-    }
+    const config = window.weekData.config;
+    return saveWeekRequest(config ? `/admin/timeslots/${config.id}` : '/admin/timeslots',
+        config ? 'PUT' : 'POST', { weekStart: window.weekStart, slots }, 'Configuration saved successfully');
 }
 
 function showConflictWarning(conflicts) {
     const warningDiv = document.getElementById('conflictWarning');
     const conflictList = document.getElementById('conflictList');
     
-    let conflictHtml = '';
-    
-    if (conflicts.availability.length > 0) {
-        conflictHtml += '<h4>Affected Availability:</h4>';
-        conflicts.availability.forEach(item => {
-            conflictHtml += `<div class="conflict-item">${item.first_name} ${item.last_name} - ${item.day_date} ${item.time_slot}</div>`;
-        });
+    conflictList.replaceChildren();
+    for (const [title, entries] of [['Affected availability', conflicts.availability], ['Affected assignments', conflicts.assignments]]) {
+        if (!entries.length) continue;
+        const heading = document.createElement('h4');
+        heading.textContent = title;
+        conflictList.appendChild(heading);
+        for (const entry of entries) {
+            const item = document.createElement('div');
+            item.className = 'conflict-item';
+            item.textContent = `${entry.first_name} ${entry.last_name} — ${entry.day_date} ${entry.time_slot}`;
+            conflictList.appendChild(item);
+        }
     }
-    
-    if (conflicts.assignments.length > 0) {
-        conflictHtml += '<h4>Affected Assignments:</h4>';
-        conflicts.assignments.forEach(item => {
-            conflictHtml += `<div class="conflict-item">${item.first_name} ${item.last_name} - ${item.day_date} ${item.time_slot}</div>`;
-        });
-    }
-    
-    conflictList.innerHTML = conflictHtml;
     warningDiv.style.display = 'block';
+    warningDiv.scrollIntoView({ block: 'nearest' });
 }
 
 async function resetToDefault() {
-    if (!confirm('Reset to default template? This will lose any unsaved changes.')) {
-        return;
-    }
-    
-    // Find default template
-    const defaultTemplate = window.templates.find(t => t.is_default);
-    if (!defaultTemplate) {
-        showToast('No default template found', 'error');
-        return;
-    }
-    
-    // Apply default template
-    try {
-        const response = await fetch(`/admin/timeslot-templates/${defaultTemplate.id}`);
-        const templateData = await response.json();
-        
-        if (response.ok) {
-            currentTimeslots = templateData.slots;
-            
-            // Re-render all days
-            for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-                renderDay(dayIndex);
-            }
-            
-            markDirty();
-            showToast('Reset to default template');
-        } else {
-            showToast('Failed to load default template', 'error');
-        }
-    } catch (error) {
-        console.error('Error resetting to default:', error);
-        showToast('Failed to reset to default template', 'error');
-    }
+    if (!confirm('Use the current default for this week? Unsaved changes will be replaced.')) return;
+    return saveWeekRequest('/admin/timeslots/apply-template', 'POST', {
+        weekStart: window.weekStart, templateId: null
+    }, 'Default schedule saved for this week');
 }
 
 async function handleSaveTemplateSubmit(e) {
@@ -619,8 +543,11 @@ async function handleSaveTemplateSubmit(e) {
 
 function markDirty() {
     isDirty = true;
+    pendingChange = null;
+    document.getElementById('conflictWarning').style.display = 'none';
     const saveBtn = document.getElementById('saveConfigBtn');
     if (saveBtn) {
+        saveBtn.disabled = false;
         saveBtn.style.background = '#f39c12';
         saveBtn.textContent = 'Save Configuration *';
     }
@@ -630,6 +557,7 @@ function markClean() {
     isDirty = false;
     const saveBtn = document.getElementById('saveConfigBtn');
     if (saveBtn) {
+        saveBtn.disabled = true;
         saveBtn.style.background = '';
         saveBtn.textContent = 'Save Configuration';
     }

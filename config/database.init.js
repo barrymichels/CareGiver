@@ -164,7 +164,7 @@ const initializeDatabase = (db) => {
                 }
             });
         });
-    });
+    }).then(() => require('../migrations/002_weekly_templates').migrate(db));
 };
 
-module.exports = initializeDatabase; 
+module.exports = initializeDatabase;

@@ -68,7 +68,7 @@ describe('Availability Routes', () => {
             const data = JSON.parse(response.text);
             expect(data.weekTitle).toBe('This Week');
             expect(data.weekOffset).toBe(0);
-            expect(data.timeSlots).toHaveLength(4);
+            expect(data.weekData.timeslots[0]).toHaveLength(4);
             expect(data.days).toHaveLength(7);
         });
 

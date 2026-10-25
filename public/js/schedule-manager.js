@@ -91,7 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Reload the page after toast
                         window.location.reload();
                     } else {
-                        await showToast('Failed to save schedule', 'error');
+                        const result = await response.json();
+                        await showToast(result.error || 'Failed to save schedule', 'error');
                     }
                 } catch (error) {
                     console.error('Error saving schedule:', error);

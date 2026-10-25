@@ -18,8 +18,8 @@
 
         .week-header {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
+            gap: 20px;
             margin-bottom: 30px;
             padding: 20px;
             background: var(--card-bg);
@@ -28,16 +28,32 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
 
-        .week-navigation {
-            display: flex;
+        .timeslot-week-navigation {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
             gap: 10px;
             align-items: center;
         }
 
-        .week-title {
+        .week-heading {
+            grid-column: 2;
+            grid-row: 1;
+            min-width: 0;
+            text-align: center;
+        }
+
+        .timeslot-week-navigation .prev-week { grid-column: 1; grid-row: 1; justify-self: start; }
+        .timeslot-week-navigation .next-week { grid-column: 3; grid-row: 1; justify-self: end; }
+
+        .week-heading .week-title {
             margin: 0;
             color: var(--primary-color);
+            white-space: normal;
+            font-size: clamp(1.4rem, 3vw, 2rem);
         }
+
+        .week-dates { margin: 8px 0 0; }
+        #scheduleSource { margin: 0 0 20px; }
 
         .locked-week {
             opacity: 0.7;
@@ -58,9 +74,13 @@
             display: flex;
             gap: 10px;
             align-items: center;
+            flex-wrap: wrap;
+            width: 100%;
         }
 
         .template-selector select {
+            min-width: 0;
+            max-width: 100%;
             padding: 8px 12px;
             border: 1px solid var(--input-border);
             border-radius: 4px;
@@ -437,6 +457,13 @@
             .timeslot-controls {
                 justify-content: center;
             }
+
+            .timeslot-week-navigation { grid-template-columns: 1fr 1fr; }
+            .week-heading { grid-column: 1 / -1; }
+            .timeslot-week-navigation .prev-week { grid-column: 1; grid-row: 2; }
+            .timeslot-week-navigation .next-week { grid-column: 2; grid-row: 2; }
+            .template-selector { justify-content: center; }
+            .template-selector label { width: 100%; }
         }
     </style>
 </head>
@@ -445,17 +472,17 @@
     
     <main class="timeslot-config-container">
         <div class="week-header <%= !canModify ? 'locked-week' : '' %>">
-            <div class="week-navigation">
+            <div class="timeslot-week-navigation">
                 <% if (weekOffset > -4) { %>
                     <a href="/admin/timeslots?weekOffset=<%= weekOffset - 1 %>" class="nav-button prev-week">
                         &larr; Previous
                     </a>
                 <% } %>
                 
-                <h1 class="week-title">
-                    Timeslots for <%= weekTitle %>
-                </h1>
-                
+                <div class="week-heading">
+                    <h1 class="week-title">Timeslots for <%= weekTitle %></h1>
+                    <p class="week-dates"><%= weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %> – <%= new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %></p>
+                </div>
                 <% if (weekOffset < 8) { %>
                     <a href="/admin/timeslots?weekOffset=<%= weekOffset + 1 %>" class="nav-button next-week">
                         Next &rarr;
@@ -466,16 +493,20 @@
             <% if (canModify) { %>
                 <div class="timeslot-controls">
                     <div class="template-selector">
-                        <label for="templateSelect">Apply Template:</label>
+                        <label for="templateSelect">Schedule template for this week:</label>
                         <select id="templateSelect">
-                            <option value="">Select a template...</option>
+                            <% const saved = weekData.config; %>
+                            <% if (saved && !saved.uses_default && !saved.template_id) { %>
+                                <option value="" selected disabled><%= saved.template_name ? `Saved: ${saved.template_name}` : 'Custom / existing schedule' %></option>
+                            <% } %>
+                            <option value="default" <%= !saved || saved.uses_default ? 'selected' : '' %>>Use default</option>
                             <% templates.forEach(template => { %>
-                                <option value="<%= template.id %>" <%= template.is_default ? 'data-default="true"' : '' %>>
+                                <option value="<%= template.id %>" <%= saved && !saved.uses_default && saved.template_id === template.id ? 'selected' : '' %>>
                                     <%= template.name %><%= template.is_default ? ' (Default)' : '' %>
                                 </option>
                             <% }) %>
                         </select>
-                        <button type="button" id="applyTemplateBtn" class="action-button" disabled>Apply</button>
+                        <button type="button" id="applyTemplateBtn" class="action-button">Apply to this week</button>
                     </div>
                     
                     <button type="button" id="copyFromLastWeekBtn" class="action-button">
@@ -489,11 +520,13 @@
             <% } %>
         </div>
 
-        <div id="conflictWarning" class="conflict-warning" style="display: none;">
-            <strong>Warning:</strong> Changing timeslots will affect existing availability and assignments.
+        <p id="scheduleSource" aria-live="polite">Saved schedule: <%= weekData.config?.template_name || (weekData.config ? 'Custom / existing schedule' : 'Default Schedule') %><%= weekData.config?.uses_default ? ' (from default)' : '' %>. Template changes do not alter this week's saved times.</p>
+
+        <div id="conflictWarning" role="alert" class="conflict-warning" style="display: none;">
+            <strong>Warning:</strong> The entries below are at times removed by this change. Continuing clears only these entries in this week; all other entries stay unchanged.
             <div class="conflict-list" id="conflictList"></div>
             <div style="margin-top: 15px;">
-                <button type="button" id="proceedWithChanges" class="btn btn-primary">Continue (Clear affected data)</button>
+                <button type="button" id="proceedWithChanges" class="btn btn-primary">Clear listed entries and apply</button>
                 <button type="button" id="cancelChanges" class="btn btn-secondary">Cancel</button>
             </div>
         </div>

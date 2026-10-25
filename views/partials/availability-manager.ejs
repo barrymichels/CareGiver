@@ -40,7 +40,7 @@
             });
             %>
 
-            <% nextWeekDates.forEach(day=> { %>
+            <% nextWeekDates.forEach((day, dayIndex)=> { %>
                 <div class="availability-day">
                     <div class="day-header">
                         <div class="day-name">
@@ -51,7 +51,7 @@
                         </div>
                     </div>
                     <div class="time-slots">
-                        <% timeSlots.forEach(slot=> { %>
+                        <% (weekData.timeslots[dayIndex] || []).forEach(slot=> { %>
                             <% const isAvailable=(userAvailability.find(a=>
                                 a.day_date === day.date.toISOString().split('T')[0] &&
                                 a.time_slot === slot.time

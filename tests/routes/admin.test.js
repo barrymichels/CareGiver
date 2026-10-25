@@ -111,7 +111,7 @@ describe('Admin Routes', () => {
             await createAvailability(regularUser.id, [
                 {
                     date: new Date().toISOString().split('T')[0],
-                    time: '9:00am',
+                    time: '8:00am',
                     isAvailable: true
                 }
             ]);
@@ -276,7 +276,7 @@ describe('Admin Routes', () => {
                 {
                     userId: regularUser.id,
                     date: '2024-01-01',
-                    time: '9:00am'
+                    time: '8:00am'
                 }
             ];
 
@@ -291,7 +291,7 @@ describe('Admin Routes', () => {
             const result = await new Promise((resolve) => {
                 testDb.get(
                     'SELECT * FROM assignments WHERE user_id = ? AND day_date = ? AND time_slot = ?',
-                    [regularUser.id, '2024-01-01', '9:00am'],
+                    [regularUser.id, '2024-01-01', '8:00am'],
                     (err, row) => resolve(row)
                 );
             });
@@ -306,7 +306,7 @@ describe('Admin Routes', () => {
                 {
                     userId: null, // Invalid user ID
                     date: '2024-01-01',
-                    time: '9:00am'
+                    time: '8:00am'
                 }
             ];
 
@@ -334,7 +334,7 @@ describe('Admin Routes', () => {
             await new Promise((resolve) => {
                 testDb.run(
                     'INSERT INTO assignments (user_id, day_date, time_slot, assigned_by) VALUES (?, ?, ?, ?)',
-                    [regularUser.id, '2024-01-01', '9:00am', adminUser.id],
+                    [regularUser.id, '2024-01-01', '8:00am', adminUser.id],
                     resolve
                 );
             });
@@ -344,7 +344,7 @@ describe('Admin Routes', () => {
                 {
                     userId: adminUser.id, // Change assignment to admin user
                     date: '2024-01-01',
-                    time: '9:00am'
+                    time: '8:00am'
                 }
             ];
 
@@ -357,7 +357,7 @@ describe('Admin Routes', () => {
             const result = await new Promise((resolve) => {
                 testDb.get(
                     'SELECT * FROM assignments WHERE day_date = ? AND time_slot = ?',
-                    ['2024-01-01', '9:00am'],
+                    ['2024-01-01', '8:00am'],
                     (err, row) => resolve(row)
                 );
             });
@@ -370,7 +370,7 @@ describe('Admin Routes', () => {
             await new Promise((resolve) => {
                 testDb.run(
                     'INSERT INTO assignments (user_id, day_date, time_slot, assigned_by) VALUES (?, ?, ?, ?)',
-                    [regularUser.id, '2024-01-01', '9:00am', adminUser.id],
+                    [regularUser.id, '2024-01-01', '8:00am', adminUser.id],
                     resolve
                 );
             });
@@ -379,7 +379,7 @@ describe('Admin Routes', () => {
                 {
                     unassign: true,
                     date: '2024-01-01',
-                    time: '9:00am'
+                    time: '8:00am'
                 }
             ];
 
@@ -392,7 +392,7 @@ describe('Admin Routes', () => {
             const result = await new Promise((resolve) => {
                 testDb.get(
                     'SELECT COUNT(*) as count FROM assignments WHERE day_date = ? AND time_slot = ?',
-                    ['2024-01-01', '9:00am'],
+                    ['2024-01-01', '8:00am'],
                     (err, row) => resolve(row)
                 );
             });
@@ -421,7 +421,7 @@ describe('Admin Routes', () => {
                 {
                     userId: regularUser.id,
                     date: '2024-01-01',
-                    time: '9:00am'
+                    time: '8:00am'
                 }
             ];
 
@@ -1059,7 +1059,7 @@ describe('Admin Routes', () => {
                     availability: [
                         {
                             date: '2024-01-01',
-                            time: '9:00am',
+                            time: '8:00am',
                             isAvailable: true
                         }
                     ]

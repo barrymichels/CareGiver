@@ -69,19 +69,29 @@ class TimeslotManager {
             };
         }
         
-        // No configuration exists, check if this is a future week and auto-create from default template
+        // A saved week is a snapshot, including weeks initialized from the default.
         if (this.canModifyWeek(weekStart)) {
             const defaultTemplate = await this.getDefaultTemplate();
-            if (defaultTemplate) {
-                return await this.applyTemplate(weekStart, defaultTemplate.id, 1); // 1 = system user
+            const creator = defaultTemplate || await this.dbHelper.getWithRetry('SELECT id AS created_by FROM users ORDER BY id LIMIT 1');
+            if (creator) {
+                return this.applyTemplate(weekStart, null, creator.created_by, { onlyIfMissing: true });
             }
         }
-        
-        // Return fallback with fixed timeslots for past weeks or if no default template
-        return {
-            config: null,
-            timeslots: this.getFallbackTimeslots()
-        };
+
+        return { config: null, timeslots: this.getFallbackTimeslots() };
+    }
+
+    // Date-only API values represent calendar days, not local instants.
+    parseWeekStart(value) {
+        if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            throw Object.assign(new Error('Invalid week start date'), { status: 400 });
+        }
+        const date = new Date(`${value}T00:00:00Z`);
+        if (isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+            throw Object.assign(new Error('Invalid week start date'), { status: 400 });
+        }
+        date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+        return date;
     }
 
     /**
@@ -130,106 +140,92 @@ class TimeslotManager {
      * @param {number} createdBy - User ID who created the configuration
      * @returns {Promise<Object>} - The created configuration and timeslots
      */
-    async createTimeslotConfiguration(weekStart, slots, createdBy) {
-        if (!this.canModifyWeek(weekStart)) {
-            throw new Error('Cannot modify past weeks');
-        }
-
-        const weekStartStr = weekStart.toISOString().split('T')[0];
-        
-        return await this.dbHelper.withTransaction(async () => {
-            // Create configuration
-            const configResult = await this.dbHelper.runWithRetry(`
-                INSERT INTO timeslot_configurations (week_start, created_by, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-            `, [weekStartStr, createdBy]);
-            
-            const configId = configResult.lastID;
-            
-            // Create timeslots
-            const timeslots = [];
-            for (const slot of slots) {
-                const slotResult = await this.dbHelper.runWithRetry(`
-                    INSERT INTO timeslots (config_id, day_of_week, time, label, slot_order)
-                    VALUES (?, ?, ?, ?, ?)
-                `, [configId, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
-                
-                timeslots.push({
-                    id: slotResult.lastID,
-                    config_id: configId,
-                    ...slot
-                });
-            }
-            
-            return {
-                config: {
-                    id: configId,
-                    week_start: weekStartStr,
-                    created_by: createdBy,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                },
-                timeslots: this.groupTimeslotsByDay(timeslots)
-            };
-        });
+    async createTimeslotConfiguration(weekStart, slots, createdBy, options = {}) {
+        return this.saveWeek(weekStart, slots, createdBy, options);
     }
 
-    /**
-     * Update an existing timeslot configuration
-     * @param {number} configId - The configuration ID to update
-     * @param {Array} slots - Array of new timeslot definitions
-     * @returns {Promise<Object>} - The updated configuration and timeslots
-     */
-    async updateTimeslotConfiguration(configId, slots) {
-        // Check if week can be modified
-        const config = await this.dbHelper.getWithRetry(`
-            SELECT * FROM timeslot_configurations WHERE id = ?
-        `, [configId]);
-        
-        if (!config) {
-            throw new Error('Configuration not found');
-        }
-        
-        const weekStart = new Date(config.week_start);
-        if (!this.canModifyWeek(weekStart)) {
-            throw new Error('Cannot modify past weeks');
-        }
+    async updateTimeslotConfiguration(configId, slots, options = {}) {
+        const config = await this.dbHelper.getWithRetry(
+            'SELECT * FROM timeslot_configurations WHERE id = ?', [configId]
+        );
+        if (!config) throw new Error('Configuration not found');
+        return this.saveWeek(new Date(config.week_start), slots, config.created_by, options);
+    }
 
-        return await this.dbHelper.withTransaction(async () => {
-            // Delete existing timeslots
-            await this.dbHelper.runWithRetry(`
-                DELETE FROM timeslots WHERE config_id = ?
-            `, [configId]);
-            
-            // Update configuration timestamp
-            await this.dbHelper.runWithRetry(`
-                UPDATE timeslot_configurations 
-                SET updated_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-            `, [configId]);
-            
-            // Create new timeslots
-            const timeslots = [];
-            for (const slot of slots) {
-                const slotResult = await this.dbHelper.runWithRetry(`
-                    INSERT INTO timeslots (config_id, day_of_week, time, label, slot_order)
-                    VALUES (?, ?, ?, ?, ?)
-                `, [configId, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
-                
-                timeslots.push({
-                    id: slotResult.lastID,
-                    config_id: configId,
-                    ...slot
+    async saveWeek(weekStart, slots, createdBy, options = {}) {
+        if (!this.canModifyWeek(weekStart)) throw new Error('Cannot modify past weeks');
+        const weekStartStr = weekStart.toISOString().slice(0, 10);
+        const { templateId = null, templateName = null, usesDefault = false,
+            ignoreConflicts = false, onlyIfMissing = false } = options;
+
+        return this.dbHelper.withTransaction(async () => {
+            let config = await this.dbHelper.getWithRetry(
+                'SELECT * FROM timeslot_configurations WHERE week_start = ?', [weekStartStr]
+            );
+            if (config && onlyIfMissing) {
+                const saved = await this.dbHelper.allWithRetry(
+                    'SELECT * FROM timeslots WHERE config_id = ? ORDER BY day_of_week, slot_order', [config.id]
+                );
+                return { config, timeslots: this.groupTimeslotsByDay(saved) };
+            }
+
+            const conflicts = await this.checkForConflicts(weekStart, slots);
+            if (conflicts.hasConflicts && ignoreConflicts !== true) {
+                throw Object.assign(new Error('Changing these times affects saved availability or assignments'), {
+                    status: 409, conflicts
                 });
             }
-            
-            return {
-                config: {
-                    ...config,
-                    updated_at: new Date().toISOString()
-                },
-                timeslots: this.groupTimeslotsByDay(timeslots)
-            };
+            // Only remove entries whose date/time is absent from the replacement schedule.
+            for (const table of ['availability', 'assignments']) {
+                for (const entry of conflicts[table]) {
+                    await this.dbHelper.runWithRetry(`DELETE FROM ${table} WHERE id = ?`, [entry.id]);
+                }
+            }
+
+            if (!config) {
+                const result = await this.dbHelper.runWithRetry(
+                    'INSERT INTO timeslot_configurations (week_start, created_by) VALUES (?, ?)',
+                    [weekStartStr, createdBy]
+                );
+                config = { id: result.lastID };
+            }
+            await this.dbHelper.runWithRetry(`
+                UPDATE timeslot_configurations
+                SET template_id = ?, template_name = ?, uses_default = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `, [templateId, templateName, usesDefault ? 1 : 0, config.id]);
+
+            const existingSlots = await this.dbHelper.allWithRetry(
+                'SELECT * FROM timeslots WHERE config_id = ?', [config.id]
+            );
+            // Free the ordering positions while retaining IDs referenced by assignments.
+            await this.dbHelper.runWithRetry(
+                'UPDATE timeslots SET slot_order = -id WHERE config_id = ?', [config.id]
+            );
+            for (const existing of existingSlots) {
+                if (!slots.some(slot => slot.day_of_week === existing.day_of_week && slot.time === existing.time)) {
+                    await this.dbHelper.runWithRetry('DELETE FROM timeslots WHERE id = ?', [existing.id]);
+                }
+            }
+            for (const slot of slots) {
+                const existing = existingSlots.find(old => old.day_of_week === slot.day_of_week && old.time === slot.time);
+                if (existing) {
+                    await this.dbHelper.runWithRetry(
+                        'UPDATE timeslots SET label = ?, slot_order = ? WHERE id = ?',
+                        [slot.label, slot.slot_order, existing.id]
+                    );
+                } else {
+                    await this.dbHelper.runWithRetry(`
+                        INSERT INTO timeslots (config_id, day_of_week, time, label, slot_order)
+                        VALUES (?, ?, ?, ?, ?)
+                    `, [config.id, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
+                }
+            }
+            config = await this.dbHelper.getWithRetry('SELECT * FROM timeslot_configurations WHERE id = ?', [config.id]);
+            const saved = await this.dbHelper.allWithRetry(
+                'SELECT * FROM timeslots WHERE config_id = ? ORDER BY day_of_week, slot_order', [config.id]
+            );
+            return { config, timeslots: this.groupTimeslotsByDay(saved) };
         });
     }
 
@@ -240,7 +236,7 @@ class TimeslotManager {
      * @param {number} createdBy - User ID who created the configuration
      * @returns {Promise<Object>} - The created configuration and timeslots
      */
-    async copyFromPreviousWeek(targetWeekStart, sourceWeekStart, createdBy) {
+    async copyFromPreviousWeek(targetWeekStart, sourceWeekStart, createdBy, options = {}) {
         if (!this.canModifyWeek(targetWeekStart)) {
             throw new Error('Cannot modify past weeks');
         }
@@ -264,20 +260,7 @@ class TimeslotManager {
             }
         }
         
-        // Check if configuration already exists
-        const weekStartStr = targetWeekStart.toISOString().split('T')[0];
-        const existingConfig = await this.dbHelper.getWithRetry(`
-            SELECT * FROM timeslot_configurations 
-            WHERE week_start = ?
-        `, [weekStartStr]);
-        
-        if (existingConfig) {
-            // Update existing configuration
-            return await this.updateTimeslotConfiguration(existingConfig.id, slots);
-        } else {
-            // Create new configuration
-            return await this.createTimeslotConfiguration(targetWeekStart, slots, createdBy);
-        }
+        return this.saveWeek(targetWeekStart, slots, createdBy, options);
     }
 
     /**
@@ -287,42 +270,19 @@ class TimeslotManager {
      * @param {number} createdBy - User ID who created the configuration
      * @returns {Promise<Object>} - The created configuration and timeslots
      */
-    async applyTemplate(weekStart, templateId, createdBy) {
-        if (!this.canModifyWeek(weekStart)) {
-            throw new Error('Cannot modify past weeks');
-        }
-
-        const templateSlots = await this.dbHelper.allWithRetry(`
-            SELECT * FROM template_slots 
-            WHERE template_id = ? 
-            ORDER BY day_of_week, slot_order
-        `, [templateId]);
-        
-        if (templateSlots.length === 0) {
-            throw new Error('Template has no slots defined');
-        }
-        
-        const slots = templateSlots.map(slot => ({
-            day_of_week: slot.day_of_week,
-            time: slot.time,
-            label: slot.label,
-            slot_order: slot.slot_order
-        }));
-        
-        // Check if configuration already exists
-        const weekStartStr = weekStart.toISOString().split('T')[0];
-        const existingConfig = await this.dbHelper.getWithRetry(`
-            SELECT * FROM timeslot_configurations 
-            WHERE week_start = ?
-        `, [weekStartStr]);
-        
-        if (existingConfig) {
-            // Update existing configuration
-            return await this.updateTimeslotConfiguration(existingConfig.id, slots);
-        } else {
-            // Create new configuration
-            return await this.createTimeslotConfiguration(weekStart, slots, createdBy);
-        }
+    async applyTemplate(weekStart, templateId, createdBy, options = {}) {
+        const usesDefault = templateId === null;
+        const template = usesDefault ? await this.getDefaultTemplate() :
+            await this.dbHelper.getWithRetry('SELECT * FROM timeslot_templates WHERE id = ?', [templateId]);
+        if (!usesDefault && !template) throw new Error('Template not found');
+        const slots = template ? await this.dbHelper.allWithRetry(
+            'SELECT * FROM template_slots WHERE template_id = ? ORDER BY day_of_week, slot_order', [template.id]
+        ) : Object.values(this.getFallbackTimeslots()).flat();
+        if (!slots.length) throw new Error('Template has no slots defined');
+        return this.saveWeek(weekStart, slots, createdBy, {
+            ...options, templateId: template?.id || null,
+            templateName: template?.name || 'Default Schedule', usesDefault
+        });
     }
 
     /**
@@ -330,32 +290,66 @@ class TimeslotManager {
      * @param {Date} weekStart - The week to check conflicts for
      * @returns {Promise<Object>} - Conflict information
      */
-    async checkForConflicts(weekStart) {
+    async checkForConflicts(weekStart, slots = null) {
         const weekStartStr = weekStart.toISOString().split('T')[0];
         const weekEndStr = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         
         // Check for existing availability
-        const availabilityConflicts = await this.dbHelper.allWithRetry(`
+        let availabilityConflicts = await this.dbHelper.allWithRetry(`
             SELECT a.*, u.first_name, u.last_name, u.email
             FROM availability a
             JOIN users u ON a.user_id = u.id
             WHERE a.day_date BETWEEN ? AND ?
-            AND a.is_available = 1
         `, [weekStartStr, weekEndStr]);
         
         // Check for existing assignments
-        const assignmentConflicts = await this.dbHelper.allWithRetry(`
+        let assignmentConflicts = await this.dbHelper.allWithRetry(`
             SELECT a.*, u.first_name, u.last_name, u.email
             FROM assignments a
             JOIN users u ON a.user_id = u.id
             WHERE a.day_date BETWEEN ? AND ?
         `, [weekStartStr, weekEndStr]);
         
+        if (slots) {
+            const remaining = new Set(slots.map(slot => `${slot.day_of_week}/${slot.time}`));
+            const removed = entry => {
+                const day = (new Date(`${entry.day_date}T00:00:00Z`).getUTCDay() + 6) % 7;
+                return !remaining.has(`${day}/${entry.time_slot}`);
+            };
+            availabilityConflicts = availabilityConflicts.filter(removed);
+            assignmentConflicts = assignmentConflicts.filter(removed);
+        }
         return {
             hasConflicts: availabilityConflicts.length > 0 || assignmentConflicts.length > 0,
             availability: availabilityConflicts,
             assignments: assignmentConflicts
         };
+    }
+
+    async validateScheduledSlots(entries) {
+        const weeks = new Map();
+        for (const entry of entries) {
+            const week = this.parseWeekStart(entry.date);
+            const key = week.toISOString().slice(0, 10);
+            if (!weeks.has(key)) {
+                const config = await this.dbHelper.getWithRetry(
+                    'SELECT id FROM timeslot_configurations WHERE week_start = ?', [key]
+                );
+                if (config) {
+                    weeks.set(key, this.groupTimeslotsByDay(await this.dbHelper.allWithRetry(
+                        'SELECT * FROM timeslots WHERE config_id = ?', [config.id]
+                    )));
+                } else {
+                    const template = await this.getDefaultTemplate();
+                    weeks.set(key, template && this.canModifyWeek(week) ?
+                        (await this.getTemplateWithSlots(template.id)).slots : this.getFallbackTimeslots());
+                }
+            }
+            const day = (new Date(`${entry.date}T00:00:00Z`).getUTCDay() + 6) % 7;
+            if (!weeks.get(key)[day].some(slot => slot.time === entry.time)) {
+                throw Object.assign(new Error('The schedule has changed. Reload this week before saving.'), { status: 409 });
+            }
+        }
     }
 
     /**

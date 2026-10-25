@@ -2,11 +2,13 @@ const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isAdmin } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
+const TimeslotManager = require('../utils/timeslotManager');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
 module.exports = function (db) {
     const dbHelper = new DatabaseHelper(db);
+    const timeslotManager = new TimeslotManager(db);
 
     // Admin dashboard
     router.get('/', isAuthenticated, isAdmin, async (req, res) => {
@@ -93,7 +95,9 @@ module.exports = function (db) {
                 default: weekTitle = `${Math.abs(limitedOffset)} Weeks ${limitedOffset > 0 ? 'Ahead' : 'Ago'}`;
             }
 
+            const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
             res.render('admin', {
+                weekData,
                 user: req.user,
                 users,
                 availability,
@@ -143,6 +147,7 @@ module.exports = function (db) {
                 });
             });
 
+            await timeslotManager.validateScheduledSlots(assignments.filter(assignment => !assignment.unassign));
             for (const assignment of assignments) {
                 if (assignment.unassign) {
                     // Delete the assignment if unassign flag is true
@@ -197,7 +202,7 @@ module.exports = function (db) {
             await new Promise((resolve) => {
                 db.run('ROLLBACK', () => resolve());
             });
-            res.status(500).json({ error: 'Server error' });
+            res.status(error.status || 500).json({ error: error.status ? error.message : 'Server error' });
         }
     });
 
@@ -451,13 +456,7 @@ module.exports = function (db) {
                 );
             });
 
-            // Get time slots from database helper
-            const timeSlots = [
-                { time: '8:00am', label: 'Morning' },
-                { time: '12:30pm', label: 'Afternoon' },
-                { time: '5:00pm', label: 'Evening' },
-                { time: '9:30pm', label: 'Night' }
-            ];
+            const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
             const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
             // Set week title based on offset
@@ -476,7 +475,7 @@ module.exports = function (db) {
                 user: req.user,
                 targetUser: user,
                 userAvailability: availability,
-                timeSlots,
+                weekData,
                 days,
                 weekStart: targetWeekStart,
                 weekTitle,
@@ -509,6 +508,7 @@ module.exports = function (db) {
 
         try {
             await dbHelper.withTransaction(async () => {
+                await timeslotManager.validateScheduledSlots(availability);
                 // Delete existing availability for the dates
                 const dates = [...new Set(availability.map(slot => slot.date))];
                 for (const date of dates) {
@@ -531,7 +531,7 @@ module.exports = function (db) {
             res.json({ message: 'Availability updated successfully' });
         } catch (error) {
             console.error('Error updating availability:', error);
-            res.status(500).json({ error: 'Server error' });
+            res.status(error.status || 500).json({ error: error.status ? error.message : 'Server error' });
         }
     });
 

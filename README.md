@@ -27,6 +27,29 @@ It will grow and change as we use it and see how the app can be improved.
 
 ## Quick Start
 
+### Choose a schedule for a week
+
+In **Configure Timeslots**, navigate to the desired Monday–Sunday week, choose a
+**Schedule template for this week**, and click **Apply to this week**. You can set
+next week's template now without changing this week's schedule. The admin schedule
+also links directly to the displayed week's template settings.
+
+Unconfigured weeks start with the defined default (initially 8am, 12:30pm, 5pm,
+and 9:30pm). Each week saves its own copy, so later template edits or default
+changes do not rewrite existing weeks. **Use default** explicitly resets the
+displayed week to the current default. Past weeks remain locked.
+
+When a change removes times with saved availability or assignments, the app lists
+the affected entries before saving. Confirming clears only those entries; entries
+at unchanged times and entries in other weeks remain intact. All schedule and
+availability screens use the saved times for that day and week.
+
+The weekly-template metadata migration runs automatically at startup and preserves
+existing schedules. Existing weeks without recorded template information appear
+as **Custom / existing schedule** until a template is explicitly applied.
+
+### Run locally
+
 1. Install dependencies:
 ```bash
 npm install

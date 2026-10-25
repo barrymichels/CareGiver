@@ -51,6 +51,7 @@ module.exports = function (db) {
                 days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
             });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error loading timeslots page:', error);
             res.status(500).render('error', {
                 message: 'Failed to load timeslots configuration',
@@ -64,7 +65,7 @@ module.exports = function (db) {
      */
     router.get('/:weekStart', isAuthenticated, isAdmin, async (req, res) => {
         try {
-            const weekStart = new Date(req.params.weekStart);
+            const weekStart = timeslotManager.parseWeekStart(req.params.weekStart);
             if (isNaN(weekStart.getTime())) {
                 return res.status(400).json({ error: 'Invalid week start date' });
             }
@@ -76,6 +77,7 @@ module.exports = function (db) {
                 canModify: timeslotManager.canModifyWeek(weekStart)
             });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error getting week configuration:', error);
             res.status(500).json({ error: 'Failed to get week configuration' });
         }
@@ -92,7 +94,7 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Invalid request data' });
             }
 
-            const weekStartDate = new Date(weekStart);
+            const weekStartDate = timeslotManager.parseWeekStart(weekStart);
             if (isNaN(weekStartDate.getTime())) {
                 return res.status(400).json({ error: 'Invalid week start date' });
             }
@@ -107,19 +109,11 @@ module.exports = function (db) {
                 return res.status(400).json({ error: validationError });
             }
 
-            // Check for conflicts
-            const conflicts = await timeslotManager.checkForConflicts(weekStartDate);
-            if (conflicts.hasConflicts && !req.body.ignoreConflicts) {
-                return res.status(409).json({
-                    error: 'Conflicts detected',
-                    conflicts
-                });
-            }
-
             const result = await timeslotManager.createTimeslotConfiguration(
                 weekStartDate, 
                 slots, 
-                req.user.id
+                req.user.id,
+                { ignoreConflicts: req.body.ignoreConflicts === true }
             );
 
             res.json({
@@ -127,6 +121,7 @@ module.exports = function (db) {
                 data: result
             });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error creating timeslot configuration:', error);
             if (error.message === 'Cannot modify past weeks') {
                 res.status(400).json({ error: error.message });
@@ -154,13 +149,14 @@ module.exports = function (db) {
                 return res.status(400).json({ error: validationError });
             }
 
-            const result = await timeslotManager.updateTimeslotConfiguration(configId, slots);
+            const result = await timeslotManager.updateTimeslotConfiguration(configId, slots, { ignoreConflicts: req.body.ignoreConflicts === true });
 
             res.json({
                 message: 'Timeslot configuration updated successfully',
                 data: result
             });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error updating timeslot configuration:', error);
             if (error.message === 'Cannot modify past weeks' || error.message === 'Configuration not found') {
                 res.status(400).json({ error: error.message });
@@ -181,8 +177,8 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Target and source week dates are required' });
             }
 
-            const targetDate = new Date(targetWeekStart);
-            const sourceDate = new Date(sourceWeekStart);
+            const targetDate = timeslotManager.parseWeekStart(targetWeekStart);
+            const sourceDate = timeslotManager.parseWeekStart(sourceWeekStart);
             
             if (isNaN(targetDate.getTime()) || isNaN(sourceDate.getTime())) {
                 return res.status(400).json({ error: 'Invalid date format' });
@@ -195,7 +191,8 @@ module.exports = function (db) {
             const result = await timeslotManager.copyFromPreviousWeek(
                 targetDate, 
                 sourceDate, 
-                req.user.id
+                req.user.id,
+                { ignoreConflicts: req.body.ignoreConflicts === true }
             );
 
             res.json({
@@ -203,6 +200,7 @@ module.exports = function (db) {
                 data: result
             });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error copying timeslots:', error);
             if (error.message.includes('Cannot modify') || error.message.includes('no configuration')) {
                 res.status(400).json({ error: error.message });
@@ -217,7 +215,7 @@ module.exports = function (db) {
      */
     router.get('/check-conflicts/:weekStart', isAuthenticated, isAdmin, async (req, res) => {
         try {
-            const weekStart = new Date(req.params.weekStart);
+            const weekStart = timeslotManager.parseWeekStart(req.params.weekStart);
             if (isNaN(weekStart.getTime())) {
                 return res.status(400).json({ error: 'Invalid week start date' });
             }
@@ -225,6 +223,7 @@ module.exports = function (db) {
             const conflicts = await timeslotManager.checkForConflicts(weekStart);
             res.json(conflicts);
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error checking conflicts:', error);
             res.status(500).json({ error: 'Failed to check conflicts' });
         }
@@ -237,11 +236,11 @@ module.exports = function (db) {
         try {
             const { weekStart, templateId } = req.body;
             
-            if (!weekStart || !templateId) {
+            if (!weekStart || (templateId !== null && (!Number.isInteger(templateId) || templateId < 1))) {
                 return res.status(400).json({ error: 'Week start and template ID are required' });
             }
 
-            const weekStartDate = new Date(weekStart);
+            const weekStartDate = timeslotManager.parseWeekStart(weekStart);
             if (isNaN(weekStartDate.getTime())) {
                 return res.status(400).json({ error: 'Invalid week start date' });
             }
@@ -252,8 +251,9 @@ module.exports = function (db) {
 
             const result = await timeslotManager.applyTemplate(
                 weekStartDate, 
-                parseInt(templateId), 
-                req.user.id
+                templateId,
+                req.user.id,
+                { ignoreConflicts: req.body.ignoreConflicts === true }
             );
 
             res.json({
@@ -261,6 +261,7 @@ module.exports = function (db) {
                 data: result
             });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error applying template:', error);
             if (error.message.includes('Cannot modify') || error.message.includes('Template')) {
                 res.status(400).json({ error: error.message });
@@ -300,16 +301,12 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Cannot delete past week configurations' });
             }
 
-            // Delete configuration (cascades to timeslots)
-            await new Promise((resolve, reject) => {
-                db.run(`DELETE FROM timeslot_configurations WHERE id = ?`, [configId], (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
+            const result = await timeslotManager.applyTemplate(weekStart, null, req.user.id, {
+                ignoreConflicts: req.body.ignoreConflicts === true
             });
-
-            res.json({ message: 'Timeslot configuration deleted successfully' });
+            res.json({ message: 'Timeslot configuration reset to default', data: result });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error deleting timeslot configuration:', error);
             res.status(500).json({ error: 'Failed to delete timeslot configuration' });
         }

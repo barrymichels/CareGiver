@@ -217,7 +217,7 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Week start date is required' });
             }
 
-            const weekStartDate = new Date(weekStart);
+            const weekStartDate = timeslotManager.parseWeekStart(weekStart);
             if (isNaN(weekStartDate.getTime())) {
                 return res.status(400).json({ error: 'Invalid week start date' });
             }
@@ -228,8 +228,9 @@ module.exports = function (db) {
 
             const result = await timeslotManager.applyTemplate(
                 weekStartDate, 
-                templateId, 
-                req.user.id
+                templateId,
+                req.user.id,
+                { ignoreConflicts: req.body.ignoreConflicts === true }
             );
 
             res.json({
@@ -237,6 +238,7 @@ module.exports = function (db) {
                 data: result
             });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error applying template:', error);
             if (error.message.includes('Cannot modify') || error.message.includes('Template')) {
                 res.status(400).json({ error: error.message });
@@ -261,7 +263,7 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Week start date is required' });
             }
 
-            const weekStartDate = new Date(weekStart);
+            const weekStartDate = timeslotManager.parseWeekStart(weekStart);
             if (isNaN(weekStartDate.getTime())) {
                 return res.status(400).json({ error: 'Invalid week start date' });
             }
@@ -303,6 +305,7 @@ module.exports = function (db) {
                 data: template
             });
         } catch (error) {
+            if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
             console.error('Error creating template from week:', error);
             res.status(500).json({ error: 'Failed to create template from week' });
         }

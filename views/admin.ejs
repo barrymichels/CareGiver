@@ -22,16 +22,13 @@
                 </div>
             </div>
 
+            <p>
+                Schedule: <strong><%= weekData.config?.template_name || (weekData.config ? 'Custom schedule' : 'Default Schedule') %></strong>
+                <a href="/admin/timeslots?weekOffset=<%= weekOffset %>">Choose this week's template</a>
+            </p>
             <div class="schedule-grid">
                 <% 
                 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                const timeSlots = [
-                    { time: '8:00am', label: 'Morning' },
-                    { time: '12:30pm', label: 'Afternoon' },
-                    { time: '5:00pm', label: 'Evening' },
-                    { time: '9:30pm', label: 'Night' }
-                ];
-
                 const weekDates = days.map((day, index) => {
                     const date = new Date(nextWeekStart);
                     date.setDate(date.getDate() + index);
@@ -46,14 +43,14 @@
                 });
                 %>
                 
-                <% weekDates.forEach(day => { %>
+                <% weekDates.forEach((day, dayIndex) => { %>
                     <div class="schedule-day">
                         <div class="day-header">
                             <div class="day-name"><%= day.name %></div>
                             <div class="day-date"><%= day.formatted %></div>
                         </div>
                         <div class="time-slots">
-                            <% timeSlots.forEach(slot => { %>
+                            <% (weekData.timeslots[dayIndex] || []).forEach(slot => { %>
                                 <% 
                                 const assignment = assignments.find(a => 
                                     a.day_date === day.date.toISOString().split('T')[0] && 

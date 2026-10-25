@@ -127,7 +127,7 @@ describe('Database Configuration', () => {
         console.error = mockConsoleError;
 
         // Try to open database with invalid path
-        const invalidPath = path.join('nonexistent', 'dir', 'db.sqlite');
+        const invalidPath = path.join(__filename, 'db.sqlite');
         
         db = null;
         expect(() => {

@@ -424,12 +424,12 @@ describe('Admin Timeslot Routes', () => {
             configId = result.lastID;
         });
 
-        it('should delete timeslot configuration', async () => {
+        it('should reset timeslot configuration to the default', async () => {
             const response = await agent
                 .delete(`/admin/timeslots/${configId}`)
                 .expect(200);
 
-            expect(response.body).toHaveProperty('message', 'Timeslot configuration deleted successfully');
+            expect(response.body).toHaveProperty('message', 'Timeslot configuration reset to default');
         });
 
         it('should reject deletion of non-existent configuration', async () => {
