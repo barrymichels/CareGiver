@@ -1,4 +1,5 @@
-FROM node:18-slim
+# sqlite3 6 requires Node >=20.17 and a prebuilt binary with glibc >=2.38.
+FROM node:24-trixie-slim
 
 # Install required packages
 RUN apt-get update && \
@@ -11,8 +12,9 @@ WORKDIR /usr/src/app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Verify native modules during the build, before the image reaches a server.
+RUN npm ci --omit=dev && \
+    node -e "require('sqlite3'); require('bcrypt')"
 
 # Copy app source
 COPY . .
@@ -36,4 +38,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 USER 1000
 
 # Start the application
-CMD ["npm", "start"] 
+CMD ["npm", "start"]

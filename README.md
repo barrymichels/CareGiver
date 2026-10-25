@@ -72,7 +72,7 @@ npm run dev
 ## Docker Deployment
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
 See our [deployment guide](docs/deployment.md) for detailed instructions.

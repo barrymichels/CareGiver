@@ -4,7 +4,7 @@ This guide covers deploying CareGiver in both standard and Docker environments.
 
 ## Prerequisites
 
-- Node.js 18+ (for standard deployment)
+- Node.js 24 (for standard deployment; matches the Docker image)
 - Docker and Docker Compose (for containerized deployment)
 - SMTP server credentials
 - Authentik instance (optional)
@@ -47,6 +47,11 @@ This guide covers deploying CareGiver in both standard and Docker environments.
 
 ## Docker Deployment
 
+The image uses Node.js 24 on Debian Trixie to support the current SQLite native
+module. The build verifies that SQLite and bcrypt load successfully. Runtime
+configuration comes from `.env`, and the database lives in the mounted `./data`
+directory; neither is copied into the image.
+
 1. Configure environment:
    ```bash
    cp .env.sample .env
@@ -55,12 +60,12 @@ This guide covers deploying CareGiver in both standard and Docker environments.
 
 2. Start with Docker Compose:
    ```bash
-   docker-compose up -d
+   docker compose up -d --build
    ```
 
 3. View logs:
    ```bash
-   docker-compose logs -f
+   docker compose logs -f
    ```
 
 ## Nginx Configuration
@@ -143,6 +148,6 @@ server {
 
 2. Docker deployment:
    ```bash
-   docker-compose pull
-   docker-compose up -d
-   ``` 
+   git pull --ff-only
+   docker compose up -d --build
+   ```
