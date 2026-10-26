@@ -157,6 +157,9 @@ document.addEventListener('DOMContentLoaded', function () {
         toggle.addEventListener('change', async (e) => {
             const userId = e.target.dataset.userId;
             const isActive = e.target.checked;
+            const deleteButton = e.target.closest('.user-card').querySelector('.delete-user');
+            e.target.disabled = true;
+            if (deleteButton) deleteButton.disabled = true;
 
             try {
                 const response = await fetch(`/admin/users/${userId}`, {
@@ -168,6 +171,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
 
                 if (response.ok) {
+                    if (deleteButton) deleteButton.hidden = isActive;
                     showToast(isActive ? 'User activated' : 'User deactivated');
                 } else {
                     showToast('Error updating user', 'error');
@@ -176,6 +180,9 @@ document.addEventListener('DOMContentLoaded', function () {
             } catch (error) {
                 showToast('Error updating user', 'error');
                 e.target.checked = !isActive; // Revert toggle if failed
+            } finally {
+                e.target.disabled = false;
+                if (deleteButton) deleteButton.disabled = false;
             }
         });
     });

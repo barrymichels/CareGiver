@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated, isAdmin } = require('../middleware/auth');
+const { isAuthenticated, isAuthenticatedApi, isAdmin } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
 const crypto = require('crypto');
@@ -245,6 +245,49 @@ module.exports = function (db) {
         } catch (error) {
             console.error('Error updating user:', error);
             res.status(500).json({ error: 'Server error' });
+        }
+    });
+
+    // Delete inactive users, preserving schedules they created for other caregivers.
+    router.delete('/users/:id', isAuthenticatedApi, isAdmin, async (req, res) => {
+        const id = Number(req.params.id);
+        if (!Number.isSafeInteger(id) || id <= 0) {
+            return res.status(400).json({ error: 'Invalid user ID' });
+        }
+        if (id === req.user.id) {
+            return res.status(400).json({ error: 'Cannot delete your own account' });
+        }
+
+        try {
+            await dbHelper.withTransaction(async () => {
+                const user = await dbHelper.getWithRetry('SELECT is_active FROM users WHERE id = ?', [id]);
+                if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+                if (user.is_active) {
+                    throw Object.assign(new Error('Only inactive users can be deleted. Deactivate this user first.'), { status: 409 });
+                }
+
+                for (const table of ['availability', 'assignments', 'user_preferences', 'notification_settings', 'morning_summary_log']) {
+                    await dbHelper.runWithRetry(`DELETE FROM ${table} WHERE user_id = ?`, [id]);
+                }
+                // Older installations only create this table when converting a virtual user.
+                const resetTokens = await dbHelper.getWithRetry("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'password_reset_tokens'");
+                if (resetTokens) {
+                    await dbHelper.runWithRetry('DELETE FROM password_reset_tokens WHERE user_id = ?', [id]);
+                }
+
+                // Transfer shared records to the deleting admin rather than deleting other users' schedules.
+                await dbHelper.runWithRetry('UPDATE assignments SET assigned_by = ? WHERE assigned_by = ?', [req.user.id, id]);
+                await dbHelper.runWithRetry('UPDATE timeslot_configurations SET created_by = ? WHERE created_by = ?', [req.user.id, id]);
+                await dbHelper.runWithRetry('UPDATE timeslot_templates SET created_by = ? WHERE created_by = ?', [req.user.id, id]);
+                const deleted = await dbHelper.runWithRetry('DELETE FROM users WHERE id = ? AND is_active = 0', [id]);
+                if (!deleted.changes) {
+                    throw Object.assign(new Error('User status changed. Reload the page before deleting.'), { status: 409 });
+                }
+            });
+            res.json({ message: 'User deleted successfully' });
+        } catch (error) {
+            if (!error.status) console.error('Error deleting user:', error);
+            res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to delete user' });
         }
     });
 

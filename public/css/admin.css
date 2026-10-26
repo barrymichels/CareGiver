@@ -23,6 +23,38 @@
     min-width: min-content;
 }
 
+.schedule-template-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+}
+
+.schedule-template-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 0.95rem;
+}
+
+.schedule-template-label {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+}
+
+.schedule-template-bar .nav-button {
+    width: auto;
+    flex-shrink: 0;
+}
+
 .schedule-day {
     border: 1px solid var(--input-border);
     border-radius: 4px;
@@ -293,6 +325,7 @@
 
 .user-controls {
     display: flex;
+    flex-wrap: wrap;
     gap: 1.5rem;
     align-items: center;
 }
@@ -789,4 +822,4 @@
     .availability-header .nav-button {
         justify-self: center;
     }
-} 
+}

@@ -22,10 +22,13 @@
                 </div>
             </div>
 
-            <p>
-                Schedule: <strong><%= weekData.config?.template_name || (weekData.config ? 'Custom schedule' : 'Default Schedule') %></strong>
-                <a href="/admin/timeslots?weekOffset=<%= weekOffset %>">Choose this week's template</a>
-            </p>
+            <div class="schedule-template-bar">
+                <div class="schedule-template-info">
+                    <span class="schedule-template-label">Schedule template</span>
+                    <strong><%= weekData.config?.template_name || (weekData.config ? 'Custom schedule' : 'Default Schedule') %></strong>
+                </div>
+                <a href="/admin/timeslots?weekOffset=<%= weekOffset %>" class="nav-button">Change template</a>
+            </div>
             <div class="schedule-grid">
                 <% 
                 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];

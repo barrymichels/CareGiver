@@ -51,6 +51,11 @@
                                 <a href="/admin/users/<%= u.id %>/availability" class="manage-button">
                                     Manage Availability
                                 </a>
+                                <% if (u.id !== user.id) { %>
+                                    <button type="button" class="delete-user" data-user-id="<%= u.id %>"
+                                        data-user-name="<%= u.first_name %> <%= u.last_name %>"
+                                        <%= u.is_active ? 'hidden' : '' %>>Delete user</button>
+                                <% } %>
                             </div>
                         </div>
                         <% }); %>
@@ -85,6 +90,7 @@
 
         <script src="/js/header.js"></script>
         <script src="/js/admin.js"></script>
+        <script src="/js/delete-user.js"></script>
 </body>
 
 </html>

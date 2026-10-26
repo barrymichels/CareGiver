@@ -51,6 +51,10 @@
                             <button class="toggle-role" data-admin="<%= u.is_admin ? 'true' : 'false' %>">
                                 <%= u.is_admin ? 'Remove Admin' : 'Make Admin' %>
                             </button>
+                            <% if (!u.is_active && u.id !== user.id) { %>
+                                <button type="button" class="delete-user" data-user-id="<%= u.id %>"
+                                    data-user-name="<%= u.first_name %> <%= u.last_name %>">Delete user</button>
+                            <% } %>
                         </div>
                     </div>
                 <% }) %>
@@ -61,5 +65,6 @@
     <script src="/js/header.js"></script>
     <script src="/js/dashboard.js"></script>
     <script src="/js/users.js"></script>
+    <script src="/js/delete-user.js"></script>
 </body>
-</html> 
+</html>
