@@ -363,38 +363,3 @@ module.exports = function (db) {
 
     return router;
 };
-
-const handleSubmit = async (e) => {
-    e.preventDefault();
-    const form = e.target;
-    const formData = new FormData(form);
-    const data = Object.fromEntries(formData);
-
-    try {
-        const response = await fetch(form.action, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-
-        const responseData = await response.json();
-
-        if (response.ok) {
-            if (responseData.redirect) {
-                window.location.href = responseData.redirect;
-            } else if (form.id === 'register-form') {
-                showMessage(form, responseData.message, 'success');
-                document.querySelector('[data-form="login"]').click();
-                form.reset();
-            }
-        } else if (response.status === 403) {
-            window.location.href = '/inactive';
-        } else {
-            showMessage(form, responseData.error || responseData.message, 'error');
-        }
-    } catch (error) {
-        showMessage(form, 'An error occurred. Please try again.', 'error');
-    }
-};

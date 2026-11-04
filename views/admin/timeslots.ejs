@@ -643,10 +643,10 @@
 
     <script>
         // Pass server data to JavaScript
-        window.weekData = <%- JSON.stringify(weekData) %>;
+        window.weekData = <%- escapeJsonForEmbed(weekData) %>;
         window.weekStart = '<%= weekStart.toISOString().split('T')[0] %>';
         window.canModify = <%= canModify %>;
-        window.templates = <%- JSON.stringify(templates) %>;
+        window.templates = <%- escapeJsonForEmbed(templates) %>;
     </script>
     <script src="/js/header.js"></script>
     <script src="/js/timeslot-manager.js"></script>

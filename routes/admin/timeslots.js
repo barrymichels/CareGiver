@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isAdmin } = require('../../middleware/auth');
 const TimeslotManager = require('../../utils/timeslotManager');
+const { escapeJsonForEmbed } = require('../../utils/safeJson');
+const { validateSlots } = require('../../utils/slotValidation');
+const { WEEK_DAYS, weekTitleFor } = require('../../utils/weekView');
 
 module.exports = function (db) {
     const timeslotManager = new TimeslotManager(db);
@@ -27,18 +30,7 @@ module.exports = function (db) {
             const templates = await timeslotManager.getAllTemplates();
 
             // Generate week title
-            let weekTitle;
-            if (limitedOffset === 0) {
-                weekTitle = 'This Week';
-            } else if (limitedOffset === 1) {
-                weekTitle = 'Next Week';
-            } else if (limitedOffset === -1) {
-                weekTitle = 'Last Week';
-            } else if (limitedOffset > 1) {
-                weekTitle = `${limitedOffset} Weeks Ahead`;
-            } else {
-                weekTitle = `${Math.abs(limitedOffset)} Weeks Ago`;
-            }
+            const weekTitle = weekTitleFor(limitedOffset);
 
             res.render('admin/timeslots', {
                 user: req.user,
@@ -48,7 +40,9 @@ module.exports = function (db) {
                 weekTitle,
                 weekStart: targetWeekStart,
                 canModify: timeslotManager.canModifyWeek(targetWeekStart),
-                days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                // Rendered into an inline <script> below; must not be plain JSON.stringify.
+                escapeJsonForEmbed,
+                days: WEEK_DAYS
             });
         } catch (error) {
             if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
@@ -314,44 +308,3 @@ module.exports = function (db) {
 
     return router;
 };
-
-/**
- * Validate timeslot data
- * @param {Array} slots - Array of slot objects
- * @returns {string|null} - Error message or null if valid
- */
-function validateSlots(slots) {
-    if (!Array.isArray(slots) || slots.length === 0) {
-        return 'At least one timeslot is required';
-    }
-
-    const timeRegex = /^(1[0-2]|0?[1-9]):([0-5]\d)([ap]m)$/i;
-    const seenSlots = new Set();
-
-    for (const slot of slots) {
-        if (typeof slot.day_of_week !== 'number' || slot.day_of_week < 0 || slot.day_of_week > 6) {
-            return 'Invalid day of week';
-        }
-
-        if (typeof slot.time !== 'string' || !timeRegex.test(slot.time)) {
-            return 'Invalid time format (use format like "8:00am" or "12:30pm")';
-        }
-
-        if (typeof slot.label !== 'string' || slot.label.trim().length === 0) {
-            return 'Slot label is required';
-        }
-
-        if (typeof slot.slot_order !== 'number' || slot.slot_order < 0) {
-            return 'Invalid slot order';
-        }
-
-        // Check for duplicate slots on same day
-        const slotKey = `${slot.day_of_week}-${slot.time}`;
-        if (seenSlots.has(slotKey)) {
-            return `Duplicate time slot: ${slot.time} on day ${slot.day_of_week}`;
-        }
-        seenSlots.add(slotKey);
-    }
-
-    return null;
-}

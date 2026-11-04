@@ -3,6 +3,7 @@ const router = express.Router();
 const { isAuthenticated, isAuthenticatedApi, isAdmin } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
+const { WEEK_DAYS, weekTitleFor } = require('../utils/weekView');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
@@ -84,16 +85,7 @@ module.exports = function (db) {
             });
 
             // Generate week title based on offset
-            let weekTitle;
-            switch (limitedOffset) {
-                case -4: weekTitle = '4 Weeks Ago'; break;
-                case -3: weekTitle = '3 Weeks Ago'; break;
-                case -2: weekTitle = '2 Weeks Ago'; break;
-                case -1: weekTitle = 'Last Week'; break;
-                case 0: weekTitle = 'This Week'; break;
-                case 1: weekTitle = 'Next Week'; break;
-                default: weekTitle = `${Math.abs(limitedOffset)} Weeks ${limitedOffset > 0 ? 'Ahead' : 'Ago'}`;
-            }
+            const weekTitle = weekTitleFor(limitedOffset);
 
             const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
             res.render('admin', {
@@ -500,19 +492,10 @@ module.exports = function (db) {
             });
 
             const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
-            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const days = WEEK_DAYS;
 
             // Set week title based on offset
-            let weekTitle;
-            switch (limitedOffset) {
-                case -4: weekTitle = '4 Weeks Ago'; break;
-                case -3: weekTitle = '3 Weeks Ago'; break;
-                case -2: weekTitle = '2 Weeks Ago'; break;
-                case -1: weekTitle = 'Last Week'; break;
-                case 0: weekTitle = 'This Week'; break;
-                case 1: weekTitle = 'Next Week'; break;
-                default: weekTitle = 'This Week';
-            }
+            const weekTitle = weekTitleFor(limitedOffset);
 
             res.render('admin/manage-availability', {
                 user: req.user,

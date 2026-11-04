@@ -242,8 +242,11 @@ describe('Index Routes', () => {
 
             expect(renderData).toBeDefined();
             expect(renderData).toHaveProperty('assignments');
-            expect(renderData).toHaveProperty('userAvailability');
             expect(renderData).toHaveProperty('weekStart');
+            // Availability is not rendered on the dashboard; the only view that uses
+            // the partial is /availability, which queries it itself.
+            expect(renderData).not.toHaveProperty('userAvailability');
+            expect(renderData).not.toHaveProperty('nextWeekAvailability');
         });
 
         it('should handle database error during setup check', async () => {

@@ -3,6 +3,7 @@ const router = express.Router();
 const { isAuthenticated, isActive } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
+const { WEEK_DAYS, weekTitleFor } = require('../utils/weekView');
 
 module.exports = function (db) {
     const dbHelper = new DatabaseHelper(db);
@@ -13,7 +14,7 @@ module.exports = function (db) {
         try {
             const weekOffset = parseInt(req.query.weekOffset) || 0;
 
-            // Limit week offset between -4 and 1
+            // Limit week offset between -1 and 1
             const limitedOffset = Math.max(-1, Math.min(1, weekOffset));
 
             // Calculate the start of the target week using TimeslotManager
@@ -23,13 +24,7 @@ module.exports = function (db) {
             targetWeekStart.setDate(currentWeekStart.getDate() + (limitedOffset * 7));
 
             // Format week title
-            let weekTitle;
-            switch (limitedOffset) {
-                case -1: weekTitle = 'Last Week'; break;
-                case 0: weekTitle = 'This Week'; break;
-                case 1: weekTitle = 'Next Week'; break;
-                default: weekTitle = 'This Week';
-            }
+            const weekTitle = weekTitleFor(limitedOffset);
 
             const availability = await new Promise((resolve, reject) => {
                 db.all(
@@ -57,7 +52,7 @@ module.exports = function (db) {
             // Get dynamic timeslots for the week
             const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
             
-            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const days = WEEK_DAYS;
 
             res.render('availability', {
                 user: req.user,

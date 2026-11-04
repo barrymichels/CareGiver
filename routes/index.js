@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isAuthenticatedApi, isActive } = require('../middleware/auth');
 const TimeslotManager = require('../utils/timeslotManager');
+const { weekTitleFor } = require('../utils/weekView');
 
 function checkSetupRequired(db) {
     return new Promise((resolve, reject) => {
@@ -174,48 +175,8 @@ module.exports = (db) => {
                         });
                 });
 
-                // Get user availability for next week
-                const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-                const nextWeekStart = new Date(today);
-                // Correctly calculate next Monday
-                const daysUntilNextMonday = currentDay === 0 ? 1 : 8 - currentDay;
-                nextWeekStart.setDate(today.getDate() + daysUntilNextMonday);
-                nextWeekStart.setHours(0, 0, 0, 0);
-
-                const nextWeekEnd = new Date(nextWeekStart);
-                nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
-
-                const userAvailability = await new Promise((resolve, reject) => {
-                    db.all(
-                        'SELECT * FROM availability WHERE user_id = ? AND day_date BETWEEN ? AND ?',
-                        [
-                            req.user.id,
-                            nextWeekStart.toISOString().split('T')[0],
-                            nextWeekEnd.toISOString().split('T')[0]
-                        ],
-                        (err, rows) => {
-                            if (err) reject(err);
-                            // Convert SQLite integer to boolean
-                            const converted = (rows || []).map(row => ({
-                                ...row,
-                                is_available: row.is_available === 1
-                            }));
-                            resolve(converted);
-                        }
-                    );
-                });
-
                 // Generate week title based on offset
-                let weekTitle;
-                switch (limitedOffset) {
-                    case -4: weekTitle = '4 Weeks Ago'; break;
-                    case -3: weekTitle = '3 Weeks Ago'; break;
-                    case -2: weekTitle = '2 Weeks Ago'; break;
-                    case -1: weekTitle = 'Last Week'; break;
-                    case 0: weekTitle = 'This Week'; break;
-                    case 1: weekTitle = 'Next Week'; break;
-                    default: weekTitle = 'This Week';
-                }
+                const weekTitle = weekTitleFor(limitedOffset);
 
                 // Get dynamic timeslots for the week
                 const weekData = await timeslotManager.getTimeslotsForWeek(weekStart);
@@ -225,8 +186,6 @@ module.exports = (db) => {
                     weekTitle,
                     weekOffset: limitedOffset,
                     assignments,
-                    userAvailability,
-                    nextWeekAvailability: [],  // No longer needed since we're showing availability for the current view
                     weekStart, // Pass the weekStart date to the template
                     weekData // Pass the dynamic timeslots
                 });

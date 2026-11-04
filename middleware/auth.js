@@ -26,9 +26,10 @@ const isAdmin = (req, res, next) => {
     if (req.user && req.user.is_admin) {
         next();
     } else {
-        res.status(403).json({ 
-            error: 'Admin access required',
-            user: req.user 
+        // Never include req.user here: it is a full `SELECT *` row and would
+        // reflect the caller's password hash and reset token back to them.
+        res.status(403).json({
+            error: 'Admin access required'
         });
     }
 };

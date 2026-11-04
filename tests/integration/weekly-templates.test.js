@@ -118,6 +118,23 @@ describe('Weekly schedule templates', () => {
         expect(controls.text).toContain(`window.weekStart = '${nextKey}'`);
     });
 
+    it('escapes a hostile slot label instead of letting it break out of the inline script', async () => {
+        const hostile = '</script><script>alert(document.cookie)</script>';
+        const template = await makeTemplate('Hostile label', [{ ...slot('8:00am'), label: hostile }]);
+        await manager.applyTemplate(nextWeek, template.id, user.id);
+
+        const page = await request(app).get('/admin/timeslots').query({ weekOffset: 1 }).expect(200);
+
+        // The payload must never appear as executable markup in the document...
+        expect(page.text).not.toContain('</script><script>alert(document.cookie)');
+
+        // ...but it must survive as data on the embedding line, escaped.
+        const embedLine = page.text.match(/window\.weekData = (.*);/)[1];
+        expect(embedLine).toContain('\\u003cscript\\u003e');
+        expect(embedLine).not.toContain('</script>');
+        expect(JSON.parse(embedLine).timeslots[0][0].label).toBe(hostile);
+    });
+
     it.each([false, true])('applies a new template without blending times across days (Tuesday keeps original times: %s)', async keepTuesday => {
         await request(app).get('/availability').query({ weekOffset: 1 }).expect(200);
         const slots = Array.from({ length: 7 }, (_, day) => keepTuesday && day === 1

@@ -132,8 +132,9 @@ server {
 - Keep Node.js and npm packages updated
 - Regularly rotate session secrets
 - Use strong passwords
-- Enable rate limiting in production
-- Set secure headers (already configured)
+- Enable rate limiting in production (not currently configured)
+- Set secure headers (`helmet` is not installed; only `X-Content-Type-Options: nosniff`
+  is set, and only in the error handler)
 - Regular security audits
 
 ## Updates

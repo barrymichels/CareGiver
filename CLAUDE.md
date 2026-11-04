@@ -199,7 +199,8 @@ template_slots (id, template_id, day_of_week, time, label, slot_order)
 **Authentication:**
 - bcrypt password hashing
 - Secure session configuration with SQLite store
-- CSRF protection through session-based auth
+- No CSRF token middleware: the only mitigation is the session cookie's `sameSite: 'lax'`.
+  Do not add routes that change state on GET — a cross-site navigation would reach them.
 - Account activation workflow
 
 ### Development Guidelines

@@ -120,9 +120,10 @@ describe('Auth Middleware', () => {
             isAdmin(mockReq, mockRes, nextFunction);
             
             expect(mockRes.status).toHaveBeenCalledWith(403);
-            expect(mockRes.json).toHaveBeenCalledWith({ 
-                error: 'Admin access required',
-                user: mockReq.user 
+            // Regression guard: the 403 body must not carry the user record,
+            // which contains the password hash and any live reset token.
+            expect(mockRes.json).toHaveBeenCalledWith({
+                error: 'Admin access required'
             });
             expect(nextFunction).not.toHaveBeenCalled();
         });
