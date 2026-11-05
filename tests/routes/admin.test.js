@@ -852,6 +852,66 @@ describe('Admin Routes', () => {
             expect(user.password).toBeDefined();
         });
 
+        it('convertVirtualUser_shouldReturnALinkOnThePathTheResetRouteIsActuallyServedAt', async () => {
+            // The auth router mounts at '/', so '/auth/reset-password/:token' 404s. The handler
+            // built that dead path for as long as this feature has existed.
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/convert`)
+                .send({ email: 'virtual@example.com' })
+                .expect(200);
+
+            expect(response.body.resetLink).toMatch(/\/reset-password\/[0-9a-f]{64}$/);
+            expect(response.body.resetLink).not.toMatch(/\/auth\/reset-password\//);
+        });
+
+        it('convertVirtualUser_shouldStoreTheTokenWhereTheResetConsumerLooksItUp', async () => {
+            // GIVEN the link an admin would copy out of this response,
+            const response = await request(app)
+                .post(`/admin/users/${virtualUser.id}/convert`)
+                .send({ email: 'virtual@example.com' })
+                .expect(200);
+            const token = response.body.resetLink.split('/').pop();
+
+            // WHEN it is resolved with the exact predicate GET /reset-password/:token uses
+            // (expiry as epoch milliseconds, compared against Date.now()),
+            const consumerRow = await new Promise((resolve, reject) => {
+                testDb.get(
+                    'SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > ?',
+                    [token, Date.now()],
+                    (err, row) => (err ? reject(err) : resolve(row))
+                );
+            });
+
+            // THEN the token validates, which it never did when it lived in its own table.
+            expect(consumerRow).toBeDefined();
+            expect(consumerRow.id).toBe(virtualUser.id);
+        });
+
+        it('convertVirtualUser_shouldNotTouchTheOrphanedPasswordResetTokensTable', async () => {
+            // GIVEN a spy over every statement this route issues,
+            const originalRun = testDb.run;
+            const executedStatements = [];
+            testDb.run = (sql, ...rest) => {
+                executedStatements.push(sql);
+                return originalRun.call(testDb, sql, ...rest);
+            };
+
+            try {
+                // WHEN a virtual user is converted,
+                await request(app)
+                    .post(`/admin/users/${virtualUser.id}/convert`)
+                    .send({ email: 'virtual@example.com' })
+                    .expect(200);
+
+                // THEN nothing is written to the table no reader exists for, and the token
+                //     travels in the column the consumer reads instead.
+                expect(executedStatements.some((sql) => sql.includes('password_reset_tokens'))).toBe(false);
+                expect(executedStatements.some((sql) => sql.includes('UPDATE users SET reset_token'))).toBe(true);
+            } finally {
+                testDb.run = originalRun;
+            }
+        });
+
         it('should validate email format', async () => {
             const response = await request(app)
                 .post(`/admin/users/${virtualUser.id}/convert`)

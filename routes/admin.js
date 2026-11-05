@@ -368,20 +368,20 @@ module.exports = function (db) {
                 );
             });
 
-            // Create password reset token
+            // A converted virtual user has no usable credential: the random password hashed
+            // above is never shown to anybody, so this link is the only way in. It therefore has
+            // to land in the store the reset consumer reads (users.reset_token) and the expiry
+            // has to be epoch milliseconds, because GET /reset-password/:token compares that
+            // column against Date.now(). The dedicated password_reset_tokens table used here
+            // previously is written by this handler and deleted when a user is removed, but read
+            // by nothing - a token placed in it could never validate.
             const token = crypto.randomBytes(32).toString('hex');
-            const expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + 24);
+            const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
-            // Store reset token
             await new Promise((resolve, reject) => {
                 db.run(
-                    `CREATE TABLE IF NOT EXISTS password_reset_tokens (
-                        token TEXT PRIMARY KEY,
-                        user_id INTEGER NOT NULL,
-                        expires_at DATETIME NOT NULL,
-                        FOREIGN KEY (user_id) REFERENCES users(id)
-                    )`,
+                    'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+                    [token, expiresAt, id],
                     (err) => {
                         if (err) reject(err);
                         resolve();
@@ -389,19 +389,8 @@ module.exports = function (db) {
                 );
             });
 
-            await new Promise((resolve, reject) => {
-                db.run(
-                    'INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (?, ?, ?)',
-                    [token, id, expiresAt.toISOString()],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
-            });
-
-            // Return success with reset link
-            const resetLink = `${process.env.BASE_URL}/auth/reset-password/${token}`;
+            // The auth router is mounted at '/', so the served path carries no /auth prefix.
+            const resetLink = `${process.env.BASE_URL}/reset-password/${token}`;
             res.json({
                 message: 'User converted successfully',
                 resetLink
