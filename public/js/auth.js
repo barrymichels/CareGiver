@@ -15,6 +15,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Two layers can answer 429 and only the app sends a sentence: the nginx flood
+    // gate replies with an openresty HTML page and sets no Retry-After. So the wait
+    // length is read from the header when it exists and is never invented when it
+    // does not - claiming "15 minutes" for a one-minute nginx refusal would be a lie.
+    const tooManyRequestsMessage = (response) => {
+        const retryAfterSeconds = Number(response.headers.get('Retry-After'));
+        if (!Number.isFinite(retryAfterSeconds) || retryAfterSeconds <= 0) {
+            return 'Too many attempts. Please wait a moment, then try again.';
+        }
+        const minutes = Math.ceil(retryAfterSeconds / 60);
+        return `Too many attempts. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+    };
+
     // Handle form submissions
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -31,7 +44,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(data),
             });
 
-            const responseData = await response.json();
+            // An unguarded response.json() here is what made a flood-gate refusal
+            // indistinguishable from a crash: HTML makes it throw, the catch below
+            // answers "An error occurred. Please try again.", and that message invites
+            // the exact retry that was just refused.
+            const responseData = await response.json().catch(() => ({}));
             
             if (response.ok) {
                 if (responseData.redirect) {
@@ -41,6 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.querySelector('[data-form="login"]').click();
                     form.reset();
                 }
+            } else if (response.status === 429) {
+                showMessage(form, responseData.error || tooManyRequestsMessage(response), 'error');
             } else {
                 showMessage(form, responseData.error || responseData.message, 'error');
             }

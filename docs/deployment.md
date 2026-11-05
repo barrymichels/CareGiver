@@ -140,6 +140,13 @@ server {
 - Those app counters are in memory, so **every container restart clears them**.
   A restart is a free fresh budget for whoever is being throttled; it is also
   why the counters are not shared between the two caregiver containers.
+- The two layers' 429 responses are **not** interchangeable and clients must never
+  assume JSON. The app answers `{"error":"Too many attempts. Try again in about N
+  minutes."}` with `Retry-After` and draft-8 `RateLimit`/`RateLimit-Policy` headers.
+  The proxy answers with an openresty HTML error page, **no** `Retry-After` and no
+  `RateLimit-*` headers. Any browser code reading a rate-limited response therefore
+  has to survive a non-JSON body (`public/js/auth.js`, `public/js/reset-password.js`
+  and `public/js/forgot-password.js` all parse with `.catch(() => ({}))`).
 - Set secure headers (`helmet` is not installed; only `X-Content-Type-Options: nosniff`
   is set, and only in the error handler)
 - Regular security audits
