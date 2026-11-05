@@ -101,6 +101,33 @@ describe('Weekly schedule templates', () => {
             .toEqual(['8:00am', '12:30pm', '5:00pm', '9:30pm']);
     });
 
+    it('re-applies a new default to future weeks that only mirror the old one', async () => {
+        await makeTemplate('Standard', Object.values(manager.getFallbackTimeslots()).flat(), true);
+        const quiet = await makeTemplate('Quiet weeks', [slot('9:00am'), slot('3:00pm', 1)]);
+
+        const bookedWeek = shifted(nextWeek, 7);
+        const bookedKey = key(bookedWeek);
+        const untouchedWeek = shifted(nextWeek, 14);
+        await manager.getTimeslotsForWeek(nextWeek);
+        const bookedSlot = (await manager.getTimeslotsForWeek(bookedWeek)).timeslots[0][0];
+        await assign(bookedKey, bookedSlot.time, bookedSlot.id);
+
+        const response = await request(app).post(`/admin/timeslot-templates/${quiet.id}/set-default`).expect(200);
+        expect(response.body.refreshedWeeks).toEqual([nextKey]);
+
+        const refreshed = await manager.getTimeslotsForWeek(nextWeek);
+        expect(refreshed.config).toMatchObject({ template_id: quiet.id, uses_default: 1 });
+        expect(refreshed.timeslots[0].map(s => s.time)).toEqual(['9:00am', '3:00pm']);
+
+        expect((await manager.getTimeslotsForWeek(bookedWeek)).timeslots[0].map(s => s.time))
+            .not.toEqual(['9:00am', '3:00pm']);
+        expect(await helper.allWithRetry('SELECT * FROM assignments WHERE day_date = ?', [bookedKey])).toHaveLength(1);
+
+        // A week nobody has opened yet picks the new default up on first view.
+        expect((await manager.getTimeslotsForWeek(untouchedWeek)).timeslots[0].map(s => s.time))
+            .toEqual(['9:00am', '3:00pm']);
+    });
+
     it('renders the same per-day times on all four calendar screens, including days with no slots', async () => {
         const template = await makeTemplate('Different days', [slot('9:00am'), slot('3:00pm', 1), slot('11:00am', 0, 1)]);
         await manager.applyTemplate(nextWeek, template.id, user.id);

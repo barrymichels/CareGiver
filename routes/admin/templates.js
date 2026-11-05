@@ -67,6 +67,12 @@ module.exports = function (db) {
                 Boolean(isDefault)
             );
 
+            if (isDefault) {
+                // createTemplate flags the new default itself; this also carries
+                // the change through to weeks that were auto-filled from the old one.
+                await timeslotManager.setDefaultTemplate(template.id, req.user.id);
+            }
+
             res.json({
                 message: 'Template created successfully',
                 data: template
@@ -152,7 +158,7 @@ module.exports = function (db) {
             // is honoured: quietly unsetting the only default would leave future
             // weeks with no schedule to fall back on.
             if (isDefault) {
-                await timeslotManager.setDefaultTemplate(templateId);
+                await timeslotManager.setDefaultTemplate(templateId, req.user.id);
             }
 
             res.json({ message: 'Template updated successfully' });
@@ -205,8 +211,8 @@ module.exports = function (db) {
                 return res.status(404).json({ error: 'Template not found' });
             }
 
-            await timeslotManager.setDefaultTemplate(templateId);
-            res.json({ message: 'Default template updated successfully' });
+            const { refreshedWeeks } = await timeslotManager.setDefaultTemplate(templateId, req.user.id);
+            res.json({ message: 'Default template updated successfully', refreshedWeeks });
         } catch (error) {
             console.error('Error setting default template:', error);
             res.status(500).json({ error: 'Failed to set default template' });
@@ -307,6 +313,12 @@ module.exports = function (db) {
                 req.user.id,
                 Boolean(isDefault)
             );
+
+            if (isDefault) {
+                // createTemplate flags the new default itself; this also carries
+                // the change through to weeks that were auto-filled from the old one.
+                await timeslotManager.setDefaultTemplate(template.id, req.user.id);
+            }
 
             res.json({
                 message: 'Template created from week successfully',
