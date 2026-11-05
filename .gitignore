@@ -8,3 +8,4 @@ nonexistent/
 # Local review notes: contain user data and vulnerability detail.
 # The remote is a public repo — do not commit these.
 docs/code-review-*.md
+docs/superpowers/
