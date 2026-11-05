@@ -110,15 +110,39 @@ server {
 
 ## Monitoring
 
-1. Basic status check:
+1. Health endpoint:
+
    ```bash
    curl http://localhost:3000/health
+   # {"status":"ok","notifications":{"enabled":true}}
    ```
 
-2. Use PM2 monitoring:
+   `GET /health` needs no session and no authorisation, so it is safe to probe from
+   anywhere that can reach the container. The Dockerfile's `HEALTHCHECK` targets it.
+
+   **`status` is `degraded`, not `failed`, when browser push is unavailable** — usually
+   a missing or invalid `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`. It deliberately still
+   answers `HTTP 200` in that state, because log in, the dashboard and calendar export
+   all work normally without push, and marking the whole container unhealthy over a
+   missing push key would be the worse outcome. If you want monitoring to *page* on
+   degradation, alert on the `status` field, not on the HTTP code:
+
    ```bash
-   pm2 monit
+   curl -fs http://localhost:3000/health | grep -q '"status":"ok"' || echo "PUSH IS OFF"
    ```
+
+   The reason push is down is written to the container log once at boot and never again:
+
+   ```bash
+   docker logs caregiver-app-1 2>&1 | grep DEGRADED
+   # ⚠️  Notifications DEGRADED - push reminders are OFF: No key set vapidDetails.publicKey
+   ```
+
+   The reason is kept out of the HTTP payload on purpose — the endpoint is unauthenticated.
+
+   Edge case worth knowing: during the first moments of boot `notifications.enabled`
+   reports `false`, because the value reflects whether the service has finished
+   initialising, not whether the keys are configured.
 
 ## Troubleshooting
 
