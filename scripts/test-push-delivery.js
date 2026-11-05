@@ -23,12 +23,10 @@ async function testPushDelivery() {
     try {
         // Initialize notification service
         const notificationService = new NotificationService(db);
-        
-        // Wait a moment for initialization
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        if (!notificationService.initialized) {
-            console.log('❌ Notification service failed to initialize');
+        const notifications = await notificationService.init();
+
+        if (!notifications.ok) {
+            console.log(`❌ Notification service failed to initialize: ${notifications.reason}`);
             return;
         }
         

@@ -7,12 +7,24 @@ class NotificationService {
         this.db = db;
         this.dbHelper = new DatabaseHelper(db);
         this.initialized = false;
+        this.degradationReason = null;
         this.scheduledJobs = new Map();
-        
-        this.init();
+        // No init() call here. A constructor cannot fail, so the version that ran
+        // one could only ever swallow its own error - see the init() docstring.
     }
 
-    init() {
+    /**
+     * Configure VAPID, then start the schedulers.
+     *
+     * Returns a result rather than logging or throwing. Previously the constructor
+     * called this, logged its own failure, and returned - so a missing VAPID key
+     * meant the schedulers never started for the life of the process while the
+     * caller still printed "Notification service initialized". Reporting is now
+     * the caller's job, and every caller must call this and check the result.
+     *
+     * @returns {Promise<{ok: true} | {ok: false, reason: string}>}
+     */
+    async init() {
         try {
             // Configure VAPID keys
             webpush.setVapidDetails(
@@ -20,15 +32,16 @@ class NotificationService {
                 process.env.VAPID_PUBLIC_KEY,
                 process.env.VAPID_PRIVATE_KEY
             );
-
-            this.initialized = true;
-            console.log('✅ Notification service initialized');
-
-            // Start cron jobs
-            this.startSchedulers();
         } catch (error) {
-            console.error('❌ Failed to initialize notification service:', error);
+            this.initialized = false;
+            this.degradationReason = error.message;
+            return { ok: false, reason: error.message };
         }
+
+        this.initialized = true;
+        this.degradationReason = null;
+        this.startSchedulers();
+        return { ok: true };
     }
 
     startSchedulers() {

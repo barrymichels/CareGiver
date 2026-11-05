@@ -31,7 +31,16 @@ app.locals.getPageTitle = getPageTitle;
     
     // Initialize notification service after database is ready
     notificationService = new NotificationService(db);
-    console.log('✅ Notification service initialized');
+    const notifications = await notificationService.init();
+    if (notifications.ok) {
+      console.log('✅ Notification service initialized');
+    } else {
+      // Degraded, not broken: login, dashboard and calendar export all work
+      // without push. /health reports only "degraded" (no config detail in a
+      // public payload), so the reason has to be spelled out here.
+      console.error(`⚠️  Notifications DEGRADED - push reminders are OFF: ${notifications.reason}`);
+      console.error('   Everything except browser push is working normally.');
+    }
   } catch (err) {
     console.error('Failed to initialize database:', err);
     process.exit(1);
@@ -72,6 +81,18 @@ app.set('trust proxy', 1);  // Trust first proxy
 
 // Passport configuration - the one local strategy, defined in config/passport.js.
 require('./config/passport')(passport, db);
+
+// Liveness probe. Answers 200 even when notifications are degraded on purpose:
+// the household can still log in and read their schedule, and marking the whole
+// container unhealthy over a missing VAPID key would be the worse failure.
+// Deliberately before the routers, and deliberately free of config detail.
+app.get('/health', (req, res) => {
+  const notificationsEnabled = Boolean(notificationService && notificationService.initialized);
+  res.json({
+    status: notificationsEnabled ? 'ok' : 'degraded',
+    notifications: { enabled: notificationsEnabled }
+  });
+});
 
 // Add the routes
 const authRoutes = require('./routes/auth')(db);
