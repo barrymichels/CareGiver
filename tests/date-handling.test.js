@@ -228,4 +228,51 @@ describe('Date Handling', () => {
             expect(weekStart.getDate()).toBe(6);
         });
     });
+
+    describe('Calendar Export Window', () => {
+        // Deliberately its own formatter: a fixture must not borrow the helper under test.
+        const toLocalDate = (date) => [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, '0'),
+            String(date.getDate()).padStart(2, '0')
+        ].join('-');
+
+        const insertAssignment = (userId, dayDate, timeSlot) => new Promise((resolve, reject) => {
+            testDb.run(
+                'INSERT INTO assignments (user_id, day_date, time_slot, assigned_by) VALUES (?, ?, ?, ?)',
+                [userId, dayDate, timeSlot, userId],
+                (err) => (err ? reject(err) : resolve())
+            );
+        });
+
+        it('GET /export-calendar_withAShiftOnTheMondayAfterTheWeek_shouldNotExportIt', async () => {
+            // GIVEN shifts on the Monday and the Sunday of the current local week, plus one on
+            // the Monday immediately following it
+            const monday = new Date();
+            const dayOfWeek = monday.getDay();
+            monday.setDate(monday.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+            monday.setHours(0, 0, 0, 0);
+
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+
+            const followingMonday = new Date(monday);
+            followingMonday.setDate(monday.getDate() + 7);
+
+            await insertAssignment(testUser.id, toLocalDate(monday), '9:00am');
+            await insertAssignment(testUser.id, toLocalDate(sunday), '2:00pm');
+            await insertAssignment(testUser.id, toLocalDate(followingMonday), '9:00am');
+
+            // WHEN the current week is exported for the calendar
+            const response = await request(app)
+                .get('/export-calendar')
+                .expect(200);
+
+            // THEN only the two shifts inside the seven-day window are exported...
+            expect((response.text.match(/BEGIN:VEVENT/g) || []).length).toBe(2);
+
+            // ...and the following Monday never reaches the user's calendar
+            expect(response.text).not.toContain(toLocalDate(followingMonday).replace(/-/g, ''));
+        });
+    });
 });

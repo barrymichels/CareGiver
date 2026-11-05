@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isAuthenticatedApi, isActive } = require('../middleware/auth');
 const TimeslotManager = require('../utils/timeslotManager');
-const { weekTitleFor } = require('../utils/weekView');
+const { weekTitleFor, weekWindowFor } = require('../utils/weekView');
 
 function checkSetupRequired(db) {
     return new Promise((resolve, reject) => {
@@ -32,16 +32,8 @@ module.exports = (db) => {
     // Export calendar endpoint
     router.get('/export-calendar', isAuthenticatedApi, isActive, async (req, res) => {
         try {
-            // Calculate week dates
-            const today = new Date();
-            const weekStart = new Date(today);
-            const currentDay = today.getDay();
-            weekStart.setDate(today.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
-            weekStart.setHours(0, 0, 0, 0);
-
-            const weekEnd = new Date(weekStart);
-            weekEnd.setDate(weekStart.getDate() + 6);
-            weekEnd.setHours(23, 59, 59, 999);
+            // Monday..Sunday of the current week, as local calendar strings
+            const { start: weekStart, sqlStart, sqlEnd } = weekWindowFor(0);
 
             // Get user's assignments for the week
             const assignments = await new Promise((resolve, reject) => {
@@ -53,8 +45,8 @@ module.exports = (db) => {
                 `,
                     [
                         req.user.id,
-                        weekStart.toISOString().split('T')[0],
-                        weekEnd.toISOString().split('T')[0]
+                        sqlStart,
+                        sqlEnd
                     ],
                     (err, rows) => {
                         if (err) reject(err);
@@ -120,7 +112,7 @@ module.exports = (db) => {
 
             // Send the file
             res.setHeader('Content-Type', 'text/calendar');
-            res.setHeader('Content-Disposition', `attachment; filename=schedule-${weekStart.toISOString().split('T')[0]}.ics`);
+            res.setHeader('Content-Disposition', `attachment; filename=schedule-${sqlStart}.ics`);
             res.send(icsContent.join('\r\n'));
 
         } catch (error) {
@@ -148,14 +140,7 @@ module.exports = (db) => {
                 // Limit week offset between -4 and 1
                 const limitedOffset = Math.max(-4, Math.min(1, weekOffset));
 
-                const today = new Date();
-                const currentWeekStart = timeslotManager.getWeekStart(today);
-                const weekStart = new Date(currentWeekStart);
-                weekStart.setDate(currentWeekStart.getDate() + (limitedOffset * 7));
-
-                const weekEnd = new Date(weekStart);
-                weekEnd.setDate(weekStart.getDate() + 6);
-                weekEnd.setHours(23, 59, 59, 999);
+                const { start: weekStart, sqlStart, sqlEnd } = weekWindowFor(limitedOffset);
 
                 // Get assignments for the week
                 const assignments = await new Promise((resolve, reject) => {
@@ -166,8 +151,8 @@ module.exports = (db) => {
                         WHERE day_date BETWEEN ? AND ?
                     `,
                         [
-                            weekStart.toISOString().split('T')[0],
-                            weekEnd.toISOString().split('T')[0]
+                            sqlStart,
+                            sqlEnd
                         ],
                         (err, rows) => {
                             if (err) reject(err);

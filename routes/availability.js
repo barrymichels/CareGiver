@@ -3,7 +3,7 @@ const router = express.Router();
 const { isAuthenticated, isActive } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
-const { WEEK_DAYS, weekTitleFor } = require('../utils/weekView');
+const { WEEK_DAYS, weekTitleFor, weekWindowFor } = require('../utils/weekView');
 
 module.exports = function (db) {
     const dbHelper = new DatabaseHelper(db);
@@ -17,11 +17,8 @@ module.exports = function (db) {
             // Limit week offset between -1 and 1
             const limitedOffset = Math.max(-1, Math.min(1, weekOffset));
 
-            // Calculate the start of the target week using TimeslotManager
-            const today = new Date();
-            const currentWeekStart = timeslotManager.getWeekStart(today);
-            const targetWeekStart = new Date(currentWeekStart);
-            targetWeekStart.setDate(currentWeekStart.getDate() + (limitedOffset * 7));
+            // Monday..Sunday of the target week, as local calendar strings
+            const { start: targetWeekStart, sqlStart, sqlEnd } = weekWindowFor(limitedOffset);
 
             // Format week title
             const weekTitle = weekTitleFor(limitedOffset);
@@ -34,8 +31,8 @@ module.exports = function (db) {
                      AND day_date BETWEEN ? AND ?`,
                     [
                         req.user.id,
-                        targetWeekStart.toISOString().split('T')[0],
-                        new Date(targetWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                        sqlStart,
+                        sqlEnd
                     ],
                     (err, rows) => {
                         if (err) reject(err);

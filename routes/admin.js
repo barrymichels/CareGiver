@@ -3,7 +3,7 @@ const router = express.Router();
 const { isAuthenticated, isAuthenticatedApi, isAdmin } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
-const { WEEK_DAYS, weekTitleFor } = require('../utils/weekView');
+const { WEEK_DAYS, weekTitleFor, weekWindowFor } = require('../utils/weekView');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
@@ -18,21 +18,8 @@ module.exports = function (db) {
             // Limit week offset between -4 and 1
             const limitedOffset = Math.max(-4, Math.min(1, weekOffset));
 
-            const today = new Date();
-            const targetWeekStart = new Date(today);
-
-            // Correctly set to Monday of current week
-            // For Sunday (day 0), go back 6 days to previous Monday
-            // For Monday through Saturday (days 1-6), go back (day-1) days
-            const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            targetWeekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-            targetWeekStart.setHours(0, 0, 0, 0);
-
-            // Apply offset
-            targetWeekStart.setDate(targetWeekStart.getDate() + (limitedOffset * 7));
-
-            const targetWeekEnd = new Date(targetWeekStart);
-            targetWeekEnd.setDate(targetWeekStart.getDate() + 6);
+            // Monday..Sunday of the target week, as local calendar strings
+            const { start: targetWeekStart, sqlStart, sqlEnd } = weekWindowFor(limitedOffset);
 
             // Get only active users
             const users = await new Promise((resolve, reject) => {
@@ -55,8 +42,8 @@ module.exports = function (db) {
                      AND a.is_available = 1
                      AND u.is_active = 1`,
                     [
-                        targetWeekStart.toISOString().split('T')[0],
-                        targetWeekEnd.toISOString().split('T')[0]
+                        sqlStart,
+                        sqlEnd
                     ],
                     (err, rows) => {
                         if (err) reject(err);
@@ -74,8 +61,8 @@ module.exports = function (db) {
                      WHERE a.day_date BETWEEN ? AND ?
                      AND u.is_active = 1`,
                     [
-                        targetWeekStart.toISOString().split('T')[0],
-                        targetWeekEnd.toISOString().split('T')[0]
+                        sqlStart,
+                        sqlEnd
                     ],
                     (err, rows) => {
                         if (err) reject(err);
@@ -453,21 +440,8 @@ module.exports = function (db) {
             }
 
             // Calculate target week start with consistent approach
-            const today = new Date();
-            const targetWeekStart = new Date(today);
-
-            // Correctly set to Monday of current week
-            // For Sunday (day 0), go back 6 days to previous Monday
-            // For Monday through Saturday (days 1-6), go back (day-1) days
-            const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            targetWeekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-            targetWeekStart.setHours(0, 0, 0, 0);
-
-            // Apply offset
-            targetWeekStart.setDate(targetWeekStart.getDate() + (limitedOffset * 7));
-
-            const targetWeekEnd = new Date(targetWeekStart);
-            targetWeekEnd.setDate(targetWeekStart.getDate() + 6);
+            // Monday..Sunday of the target week, as local calendar strings
+            const { start: targetWeekStart, sqlStart, sqlEnd } = weekWindowFor(limitedOffset);
 
             const availability = await new Promise((resolve, reject) => {
                 db.all(
@@ -476,8 +450,8 @@ module.exports = function (db) {
                      AND day_date BETWEEN ? AND ?`,
                     [
                         id,
-                        targetWeekStart.toISOString().split('T')[0],
-                        targetWeekEnd.toISOString().split('T')[0]
+                        sqlStart,
+                        sqlEnd
                     ],
                     (err, rows) => {
                         if (err) reject(err);
