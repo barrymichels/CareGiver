@@ -3,6 +3,7 @@ const passport = require('passport');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const { buildAuthLimiters } = require('../middleware/rateLimit');
 const router = express.Router();
 
 // Create transporter factory function instead of module-level instance
@@ -23,6 +24,10 @@ function createTransporter() {
 }
 
 module.exports = function (db) {
+    // Built once per router. Disabled automatically under NODE_ENV=test unless
+    // RATE_LIMITS=on, so the existing auth suite keeps its current behaviour.
+    const { loginLimiter, forgotPasswordLimiter, resetPasswordLimiter } = buildAuthLimiters();
+
     // Check if setup is required
     function checkSetupRequired() {
         return new Promise((resolve, reject) => {
@@ -48,6 +53,7 @@ module.exports = function (db) {
 
     // Login submission
     router.post('/login',
+        loginLimiter,
         passport.authenticate('local', {
             failWithError: true,
             failureMessage: true
@@ -217,7 +223,7 @@ module.exports = function (db) {
         res.render('forgot-password');
     });
 
-    router.post('/forgot-password', async (req, res) => {
+    router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
         try {
             const { email } = req.body;
 
@@ -310,7 +316,7 @@ module.exports = function (db) {
         }
     });
 
-    router.post('/reset-password/:token', async (req, res) => {
+    router.post('/reset-password/:token', resetPasswordLimiter, async (req, res) => {
         try {
             const { token } = req.params;
             const { password, confirmPassword } = req.body;

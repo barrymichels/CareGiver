@@ -6,6 +6,8 @@ const {
     LOGIN_MAX,
     FORGOT_MAX
 } = require('../../middleware/rateLimit');
+const { testDb, initializeTestDb } = require('../../config/test.db');
+const configurePassport = require('../../config/passport');
 
 const RESET_ROUTE = '/reset-password/some-token';
 
@@ -104,5 +106,47 @@ describe('auth rate limiters', () => {
 
         expect((await request(app).post('/login').set('X-Forwarded-For', '203.0.113.7').send({})).status).toBe(429);
         expect((await request(app).post('/login').set('X-Forwarded-For', '203.0.113.8').send({})).status).toBe(200);
+    });
+});
+
+describe('mounted on the real auth routes', () => {
+    beforeAll(async () => {
+        await initializeTestDb();
+    });
+
+    it('limits the real auth routes when RATE_LIMITS=on', async () => {
+        let limited;
+        jest.isolateModules(() => {
+            process.env.RATE_LIMITS = 'on';
+            const session = require('express-session');
+            const passport = require('passport');
+            const configurePassport = require('../../config/passport');
+
+            const app = express();
+            app.set('trust proxy', 1); // mirrors app.js:73, so the per-IP key is real here
+            app.use(express.json());
+            app.use(session({ secret: 'test-secret', resave: false, saveUninitialized: false }));
+            app.use(passport.initialize());
+            app.use(passport.session());
+            configurePassport(passport, testDb);
+            app.engine('ejs', (file, data, cb) => cb(null, 'rendered'));
+            app.set('view engine', 'ejs');
+
+            app.use('/', require('../../routes/auth')(testDb));
+            limited = app;
+        });
+        delete process.env.RATE_LIMITS;
+
+        // The limiter runs before the strategy, so the flood never reaches bcrypt.
+        await Promise.all(hit(limited, '/login', LOGIN_MAX, '203.0.113.9'));
+
+        expect((await request(limited).post('/login').set('X-Forwarded-For', '203.0.113.9').send({})).status).toBe(429);
+
+        // A different IP on the same route is untouched...
+        expect((await request(limited).post('/login').set('X-Forwarded-For', '203.0.113.10').send({})).status).not.toBe(429);
+
+        // ...and an unarmed path on the same router is unaffected, proving the
+        // limiter is mounted per endpoint rather than on the router as a whole.
+        expect((await request(limited).get('/logout').set('X-Forwarded-For', '203.0.113.9')).status).not.toBe(429);
     });
 });
