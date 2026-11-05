@@ -18,7 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 showMessage(form, 'If this email is registered, you will receive password reset instructions shortly.', 'success');
                 form.reset();
+            } else if (response.status === 429) {
+                // A refused request must never look like "an email is on its way":
+                // the sender would wait an hour for a mail that was never queued.
+                const body = await response.json().catch(() => ({}));
+                showMessage(form, body.error || 'Too many attempts. Please wait a while and try again.', 'error');
             } else {
+                // Deliberately identical to the success line for every other
+                // failure: this form must not reveal whether an address exists.
                 showMessage(form, 'If this email is registered, you will receive password reset instructions shortly.', 'success');
             }
         } catch (error) {

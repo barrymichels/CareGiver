@@ -22,8 +22,8 @@ const FORGOT_MAX = 5;
 const RESET_WINDOW_MS = 15 * 60 * 1000;
 const RESET_MAX = 10;
 
-const TOO_MANY_ATTEMPTS = 'Too many attempts. Please wait a few minutes and try again.';
-const TOO_MANY_RESETS = 'Too many password reset requests. Please try again later.';
+const TOO_MANY_ATTEMPTS = 'Too many attempts.';
+const TOO_MANY_RESETS = 'Too many password reset requests.';
 
 /**
  * Rollback lever: set RATE_LIMITS=off in the environment to stop the limiters
@@ -49,7 +49,15 @@ function makeLimiter(windowMs, limit, message, { skipSuccessfulRequests = false 
         standardHeaders: 'draft-8',
         legacyHeaders: false,
         skipSuccessfulRequests,
-        handler: (req, res) => res.status(429).json({ error: message })
+        // State the real wait. "A few minutes" is wrong for a 15-minute login
+        // window and very wrong for the mailer's hour, and the form is the only
+        // place a caregiver learns any of this. Retry-After is already set by the
+        // time the handler runs, so the sentence and the headers cannot disagree.
+        handler: (req, res) => {
+            const seconds = Number(res.getHeader('Retry-After')) || windowMs / 1000;
+            const minutes = Math.max(1, Math.ceil(seconds / 60));
+            res.status(429).json({ error: `${message} Try again in about ${minutes} minutes.` });
+        }
     });
 }
 

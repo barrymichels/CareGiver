@@ -132,7 +132,14 @@ server {
 - Keep Node.js and npm packages updated
 - Regularly rotate session secrets
 - Use strong passwords
-- Enable rate limiting in production (not currently configured)
+- Rate limiting IS configured, in two layers: per-endpoint limiters in the app
+  (`middleware/rateLimit.js` - 10 login attempts per address per 15 min, 5
+  password-reset mails per address per hour) and an optional coarse gate in the
+  proxy (`docs/nginx/auth-rate-limit.conf`). Both answer 429. The app limiters
+  are on unless `RATE_LIMITS=off` is set in `.env`.
+- Those app counters are in memory, so **every container restart clears them**.
+  A restart is a free fresh budget for whoever is being throttled; it is also
+  why the counters are not shared between the two caregiver containers.
 - Set secure headers (`helmet` is not installed; only `X-Content-Type-Options: nosniff`
   is set, and only in the error handler)
 - Regular security audits

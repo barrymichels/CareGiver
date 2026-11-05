@@ -4,7 +4,8 @@ const {
     buildAuthLimiters,
     limitsEnabledByDefault,
     LOGIN_MAX,
-    FORGOT_MAX
+    FORGOT_MAX,
+    RESET_MAX
 } = require('../../middleware/rateLimit');
 const { testDb, initializeTestDb } = require('../../config/test.db');
 const configurePassport = require('../../config/passport');
@@ -142,15 +143,17 @@ describe('mounted on the real auth routes', () => {
         await initializeTestDb();
     });
 
-    it('limits the real auth routes when RATE_LIMITS=on', async () => {
-        let limited;
+    // Each call builds its own router, so each limiter instance starts with an
+    // empty bucket and the three routes cannot interfere with each other's tests.
+    function limitedApp() {
+        let app;
         jest.isolateModules(() => {
             process.env.RATE_LIMITS = 'on';
             const session = require('express-session');
             const passport = require('passport');
             const configurePassport = require('../../config/passport');
 
-            const app = express();
+            app = express();
             app.set('trust proxy', 1); // mirrors app.js:73, so the per-IP key is real here
             app.use(express.json());
             app.use(session({ secret: 'test-secret', resave: false, saveUninitialized: false }));
@@ -161,20 +164,54 @@ describe('mounted on the real auth routes', () => {
             app.set('view engine', 'ejs');
 
             app.use('/', require('../../routes/auth')(testDb));
-            limited = app;
         });
         delete process.env.RATE_LIMITS;
+        return app;
+    }
+
+    const post = (app, path, from) => request(app).post(path).set('X-Forwarded-For', from).send({});
+
+    it('limits the real auth routes when RATE_LIMITS=on', async () => {
+        const limited = limitedApp();
 
         // The limiter runs before the strategy, so the flood never reaches bcrypt.
         await Promise.all(hit(limited, '/login', LOGIN_MAX, '203.0.113.9'));
 
-        expect((await request(limited).post('/login').set('X-Forwarded-For', '203.0.113.9').send({})).status).toBe(429);
+        // The refusal names the wait, because "a few minutes" is not 15.
+        const blocked = await post(limited, '/login', '203.0.113.9');
+        expect(blocked.status).toBe(429);
+        expect(blocked.body.error).toMatch(/Try again in about 1[45] minutes\./);
 
         // A different IP on the same route is untouched...
-        expect((await request(limited).post('/login').set('X-Forwarded-For', '203.0.113.10').send({})).status).not.toBe(429);
+        expect((await post(limited, '/login', '203.0.113.10')).status).not.toBe(429);
 
         // ...and an unarmed path on the same router is unaffected, proving the
         // limiter is mounted per endpoint rather than on the router as a whole.
         expect((await request(limited).get('/logout').set('X-Forwarded-For', '203.0.113.9')).status).not.toBe(429);
+    });
+
+    // Without this, deleting the limiter from the mailer route - the endpoint this
+    // whole feature exists to protect - leaves the suite green.
+    it('limits the mailer route, which is the one that costs money', async () => {
+        const limited = limitedApp();
+        const from = '203.0.113.11';
+
+        // An unknown address: the handler answers without sending, so the suite
+        // never reaches Gmail. Every one of these still spends the budget.
+        for (let i = 0; i < FORGOT_MAX; i++) {
+            expect((await post(limited, '/forgot-password', from)).status).not.toBe(429);
+        }
+        expect((await post(limited, '/forgot-password', from)).status).toBe(429);
+    });
+
+    it('limits the reset-password route', async () => {
+        const limited = limitedApp();
+        const from = '203.0.113.12';
+        const path = '/reset-password/a-token-that-does-not-exist';
+
+        for (let i = 0; i < RESET_MAX; i++) {
+            expect((await post(limited, path, from)).status).not.toBe(429);
+        }
+        expect((await post(limited, path, from)).status).toBe(429);
     });
 });
