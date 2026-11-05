@@ -4,7 +4,6 @@ const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const { buildAuthLimiters } = require('../middleware/rateLimit');
-const router = express.Router();
 
 // Create transporter factory function instead of module-level instance
 function createTransporter() {
@@ -24,6 +23,12 @@ function createTransporter() {
 }
 
 module.exports = function (db) {
+    // Created per call, deliberately. A module-level router is shared by every
+    // require() of this file, so the first caller's db would be captured by the
+    // already-registered routes and every later caller's db argument would be
+    // ignored in silence - which is exactly how three tests in tests/routes/auth.test.js
+    // came to exercise the real SQLite fixture instead of the mocks they build.
+    const router = express.Router();
     // Built once per router. Disabled automatically under NODE_ENV=test unless
     // RATE_LIMITS=on, so the existing auth suite keeps its current behaviour.
     const { loginLimiter, forgotPasswordLimiter, resetPasswordLimiter } = buildAuthLimiters();
@@ -223,52 +228,84 @@ module.exports = function (db) {
         res.render('forgot-password');
     });
 
-    router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
-        try {
-            const { email } = req.body;
+    /**
+     * Answer for every accepted reset request, whether or not the address exists.
+     *
+     * A distinct response per outcome turns this endpoint into an account-enumeration
+     * oracle (review finding 15): `curl` plus the two different bodies is enough to
+     * list every registered address. The browser form already rendered one masked
+     * line for every non-429 outcome, so this only brings the API into line with what
+     * users have always actually seen. Anything the caller can only learn by asking
+     * with a *well-formed* address is hidden; malformed input is still refused,
+     * because "that string is not an address" leaks nothing about who is registered.
+     */
+    const RESET_REQUEST_ACKNOWLEDGEMENT = 'If an account exists for that address, a password reset link has been sent.';
 
+    /**
+     * Deliberately loose shape check, not RFC 5322 validation. Its job is to stop a
+     * missing address from reaching toLowerCase() (review finding 14) and to keep
+     * nonsense from costing a database read and an SMTP attempt.
+     */
+    function isWellFormedEmail(value) {
+        if (typeof value !== 'string') {
+            return false;
+        }
+        return /^[^\s@]+@[^\s@]+(\.[^\s@]+)+$/.test(value.trim());
+    }
+
+    router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
+        const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+
+        if (!isWellFormedEmail(rawEmail)) {
+            return res.status(400).json({ error: 'Please enter a valid email address' });
+        }
+
+        try {
             // Find user
             const user = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
+                db.get('SELECT * FROM users WHERE email = ?', [rawEmail.toLowerCase()], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
             });
 
-            if (!user) {
-                return res.status(400).json({ error: 'No account found with that email address' });
-            }
+            if (user) {
+                // Generate reset token
+                const token = crypto.randomBytes(32).toString('hex');
+                const expires = Date.now() + 3600000; // 1 hour
 
-            // Generate reset token
-            const token = crypto.randomBytes(32).toString('hex');
-            const expires = Date.now() + 3600000; // 1 hour
-
-            // Save token to database
-            await new Promise((resolve, reject) => {
-                db.run(
-                    'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
-                    [token, expires, user.id],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
-            });
-
-            // Send email
-            const transporter = createTransporter();
-            try {
-                await transporter.sendMail({
-                    to: user.email,
-                    subject: 'Password Reset',
-                    text: `Click here to reset your password: ${process.env.BASE_URL}/reset-password/${token}`
+                // Save token to database
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+                        [token, expires, user.id],
+                        (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        }
+                    );
                 });
-                res.json({ message: 'Password reset email sent' });
-            } catch (emailError) {
-                // If email fails, return error
-                res.status(500).json({ error: 'Error sending password reset email' });
+
+                // Send email. A failure here is reported to the operator, never to the
+                // caller: only an existing account can reach this branch, so a distinct
+                // status would hand back exactly the leak this route is meant to close.
+                const transporter = createTransporter();
+                try {
+                    await transporter.sendMail({
+                        to: user.email,
+                        subject: 'Password Reset',
+                        text: `Click here to reset your password: ${process.env.BASE_URL}/reset-password/${token}`
+                    });
+                } catch (emailError) {
+                    console.error(`Password reset email could not be queued for user id ${user.id}: ${emailError.message}`);
+                }
             }
+
+            res.json({ message: RESET_REQUEST_ACKNOWLEDGEMENT });
         } catch (error) {
+            // A database fault answers identically for registered and unregistered
+            // addresses, so this status cannot be used to enumerate anyone.
+            console.error('POST /forgot-password failed:', error);
             res.status(500).json({ error: 'Server error' });
         }
     });

@@ -1,6 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('forgot-password-form');
 
+    // Shown for every outcome that must not disclose whether an address is registered.
+    const MASKED_FEEDBACK = 'If this email is registered, you will receive password reset instructions shortly.';
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(form);
@@ -16,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (response.ok) {
-                showMessage(form, 'If this email is registered, you will receive password reset instructions shortly.', 'success');
+                showMessage(form, MASKED_FEEDBACK, 'success');
                 form.reset();
             } else if (response.status === 429) {
                 // A refused request must never look like "an email is on its way":
@@ -24,9 +27,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 const body = await response.json().catch(() => ({}));
                 showMessage(form, body.error || 'Too many attempts. Please wait a while and try again.', 'error');
             } else {
-                // Deliberately identical to the success line for every other
-                // failure: this form must not reveal whether an address exists.
-                showMessage(form, 'If this email is registered, you will receive password reset instructions shortly.', 'success');
+                // This route answers 400 only for "that is not an address"; an unknown
+                // account gets the masked 200 instead. So relaying a 400 discloses
+                // nothing about who is registered. Any other failure stays vague.
+                const body = await response.json().catch(() => ({}));
+                if (response.status === 400 && body.error) {
+                    showMessage(form, body.error, 'error');
+                } else {
+                    showMessage(form, MASKED_FEEDBACK, 'success');
+                }
             }
         } catch (error) {
             showMessage(form, 'An error occurred. Please try again.', 'error');

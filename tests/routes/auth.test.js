@@ -249,18 +249,27 @@ describe('Auth Routes', () => {
         });
     });
 
-    describe('POST /forgot-password', () => {
-        it('should handle non-existent email', async () => {
-            const mockDb = {
-                get: (query, params, callback) => {
-                    if (query.includes('SELECT * FROM users WHERE email = ?')) {
-                        callback(null, null);
-                    } else {
-                        callback(null, {});
-                    }
-                }
-            };
+    describe('route factory isolation', () => {
+        it('authRoutes_whenRequiredTwiceWithDifferentDatabases_shouldReturnIndependentRouters', () => {
+            // GIVEN two different databases,
+            const firstDb = { get: jest.fn(), run: jest.fn() };
+            const secondDb = { get: jest.fn(), run: jest.fn() };
 
+            // WHEN this module's factory is called with each of them,
+            const firstRouter = require('../../routes/auth')(firstDb);
+            const secondRouter = require('../../routes/auth')(secondDb);
+
+            // THEN they are separate routers. They used to be one module-level
+            // instance, so every caller after app.js received app.js's database
+            // regardless of what it passed - mocks included, silently:
+            expect(secondRouter).not.toBe(firstRouter);
+        });
+    });
+
+    describe('POST /forgot-password', () => {
+        const MASKED_ACKNOWLEDGEMENT = 'If an account exists for that address, a password reset link has been sent.';
+
+        const buildForgotPasswordApp = (mockDb) => {
             const mockApp = express();
             mockApp.use(express.json());
             mockApp.use(session({
@@ -268,55 +277,147 @@ describe('Auth Routes', () => {
                 resave: false,
                 saveUninitialized: false
             }));
-            
-            const authRoutes = require('../../routes/auth')(mockDb);
-            mockApp.use('/', authRoutes);
+            mockApp.use('/', require('../../routes/auth')(mockDb));
+            return mockApp;
+        };
 
-            const response = await request(mockApp)
-                .post('/forgot-password')
-                .send({
-                    email: 'nonexistent@example.com'
-                });
-
-            expect(response.status).toBe(400);
-            expect(response.body).toHaveProperty('error', 'No account found with that email address');
+        const dbReturning = (row) => ({
+            get: (query, params, callback) => callback(null, row),
+            run: (query, params, callback) => callback(null)
         });
 
-        it('should handle email sending error', async () => {
-            // Mock nodemailer to throw error
-            const mockSendMail = jest.fn().mockRejectedValue(new Error('SMTP error'));
-            nodemailer.createTransport.mockReturnValue({ sendMail: mockSendMail });
+        it('forgotPassword_withAnUnregisteredEmail_shouldAnswer200WithTheMaskedAcknowledgement', async () => {
+            // GIVEN a lookup that finds nobody,
+            const app = buildForgotPasswordApp(dbReturning(null));
 
-            // Mock database to return a user and handle token update
-            const mockDb = {
+            // WHEN a well-formed but unregistered address is submitted,
+            const response = await request(app)
+                .post('/forgot-password')
+                .send({ email: 'nonexistent@example.com' });
+
+            // THEN the answer is indistinguishable from a real user's, so the route
+            // cannot be used to list registered addresses (finding 15):
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({ message: MASKED_ACKNOWLEDGEMENT });
+        });
+
+        it('forgotPassword_withARegisteredEmail_shouldAnswerTheSameBodyAsAnUnregisteredOne', async () => {
+            // GIVEN an address that does exist, with a transport that accepts the mail:
+            const sendMail = jest.fn().mockResolvedValue({ messageId: 'test' });
+            nodemailer.createTransport.mockReturnValue({ sendMail });
+            const app = buildForgotPasswordApp(dbReturning({ ...testUser, email: 'registered@example.com' }));
+
+            // WHEN reset is requested,
+            const response = await request(app)
+                .post('/forgot-password')
+                .send({ email: 'registered@example.com' });
+
+            // THEN the mail really was attempted, yet the caller still sees the
+            // unregistered answer - the two outcomes are byte-identical:
+            expect(sendMail).toHaveBeenCalledTimes(1);
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({ message: MASKED_ACKNOWLEDGEMENT });
+        });
+
+        it('forgotPassword_withNoEmailField_shouldRefuse400WithoutThrowingOrReadingTheDatabase', async () => {
+            // GIVEN a body with no email field - the payload that used to reach
+            // email.toLowerCase() and surface as a 500 (finding 14),
+            const db = { get: jest.fn(), run: jest.fn() };
+            const app = buildForgotPasswordApp(db);
+
+            // WHEN it is posted,
+            const response = await request(app).post('/forgot-password').send({});
+
+            // THEN it is refused on shape, before a single database read:
+            expect(response.status).toBe(400);
+            expect(response.body).toEqual({ error: 'Please enter a valid email address' });
+            expect(db.get).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['empty string', ''],
+            ['whitespace only', '   '],
+            ['no at sign', 'not-an-email'],
+            ['no domain dot', 'user@example'],
+            ['two at signs', 'a@b@c.com'],
+            ['embedded space', 'me @example.com'],
+            ['non-string value', 42]
+        ])('forgotPassword_withAMalformedAddress (%s)_shouldRefuse400WithoutTouchingTheDatabase', async (label, email) => {
+            // GIVEN a value that is not an address,
+            const db = { get: jest.fn(), run: jest.fn() };
+            const app = buildForgotPasswordApp(db);
+
+            // WHEN it is submitted,
+            const response = await request(app).post('/forgot-password').send({ email });
+
+            // THEN it is refused as syntax. That leaks nothing about who is
+            // registered, and no lookup or SMTP attempt is spent on nonsense:
+            expect(response.status).toBe(400);
+            expect(response.body).toEqual({ error: 'Please enter a valid email address' });
+            expect(db.get).not.toHaveBeenCalled();
+        });
+
+        it('forgotPassword_withWhitespaceAndMixedCase_shouldLookUpTheNormalisedAddress', async () => {
+            // GIVEN an address typed as "  Alice@Example.COM ",
+            const capturedParams = [];
+            const sendMail = jest.fn().mockResolvedValue({});
+            nodemailer.createTransport.mockReturnValue({ sendMail });
+            const app = buildForgotPasswordApp({
                 get: (query, params, callback) => {
-                    if (query.includes('SELECT * FROM users WHERE email = ?')) {
-                        callback(null, { ...testUser, email: params[0] });
-                    }
+                    capturedParams.push(params[0]);
+                    callback(null, { ...testUser, email: 'alice@example.com' });
                 },
                 run: (query, params, callback) => callback(null)
-            };
+            });
 
-            const mockApp = express();
-            mockApp.use(express.json());
-            mockApp.use(session({
-                secret: 'test-secret',
-                resave: false,
-                saveUninitialized: false
-            }));
-            
-            const authRoutes = require('../../routes/auth')(mockDb);
-            mockApp.use('/', authRoutes);
-
-            const response = await request(mockApp)
+            // WHEN it is submitted,
+            const response = await request(app)
                 .post('/forgot-password')
-                .send({
-                    email: testUser.email
-                });
+                .send({ email: '  Alice@Example.COM  ' });
 
+            // THEN the lookup used the trimmed lower-case form, so an address
+            // copied out of an email still finds its account:
+            expect(capturedParams).toEqual(['alice@example.com']);
+            expect(sendMail).toHaveBeenCalledTimes(1);
+            expect(response.status).toBe(200);
+        });
+
+        it('forgotPassword_whenTheMailServerRejectsTheSend_shouldStillAnswerTheMaskedAcknowledgement', async () => {
+            // GIVEN an existing account whose reset mail cannot be sent:
+            const sendMail = jest.fn().mockRejectedValue(new Error('SMTP error'));
+            nodemailer.createTransport.mockReturnValue({ sendMail });
+            const app = buildForgotPasswordApp(dbReturning({ ...testUser, email: 'registered@example.com' }));
+
+            // WHEN reset is requested,
+            const response = await request(app)
+                .post('/forgot-password')
+                .send({ email: 'registered@example.com' });
+
+            // THEN the send was attempted but the failure stays hidden. Only an
+            // existing account can reach this branch, so a 500 here would hand
+            // back the exact leak this route exists to close.
+            expect(sendMail).toHaveBeenCalledTimes(1);
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({ message: MASKED_ACKNOWLEDGEMENT });
+        });
+
+        it('forgotPassword_whenTheDatabaseFailsTheLookup_shouldReport500BecauseItLeaksNothing', async () => {
+            // GIVEN a lookup that errors instead of returning nobody:
+            const app = buildForgotPasswordApp({
+                get: (query, params, callback) => callback(new Error('SQLITE_BUSY'), null),
+                run: (query, params, callback) => callback(null)
+            });
+
+            // WHEN reset is requested,
+            const response = await request(app)
+                .post('/forgot-password')
+                .send({ email: 'someone@example.com' });
+
+            // THEN the operator sees a 500. This is safe to expose because the same
+            // fault happens for registered and unregistered addresses alike, so it
+            // cannot be used to tell them apart.
             expect(response.status).toBe(500);
-            expect(response.body).toHaveProperty('error', 'Error sending password reset email');
-            expect(mockSendMail).toHaveBeenCalled();
+            expect(response.body).toEqual({ error: 'Server error' });
         });
     });
 
@@ -355,7 +456,8 @@ describe('Auth Routes', () => {
             });
         });
 
-        it('should handle actual database error', async () => {
+        it('resetPassword_whenTheTokenLookupErrors_shouldRenderTheProcessingErrorNotTheExpiredLinkMessage', async () => {
+            // GIVEN a lookup that fails outright, rather than finding no token:
             const mockDb = {
                 get: (query, params, callback) => {
                     if (query.includes('reset_token')) {
@@ -377,12 +479,17 @@ describe('Auth Routes', () => {
             const authRoutes = require('../../routes/auth')(mockDb);
             mockApp.use('/', authRoutes);
 
+            // WHEN the reset link is opened,
             const response = await request(mockApp)
                 .get('/reset-password/any-token');
 
+            // THEN the caller is told processing failed, not that the link expired.
+            // This branch never ran while the shared router swallowed mockDb and the
+            // real fixture answered instead, which is why the assertion below used to
+            // demand the expired-link wording and still pass.
             const rendered = JSON.parse(response.text);
             expect(rendered.view).toBe('reset-password-error.ejs');
-            expect(rendered.message).toBe('Password reset link is invalid or has expired.');
+            expect(rendered.message).toBe('An error occurred while processing your request.');
             expect(rendered.action).toEqual({
                 text: 'Back to Login',
                 url: '/login'
