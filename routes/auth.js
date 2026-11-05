@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const { buildAuthLimiters } = require('../middleware/rateLimit');
+const { normalizeEmail, isWellFormedEmail } = require('../utils/email');
 
 // Create transporter factory function instead of module-level instance
 function createTransporter() {
@@ -74,12 +75,15 @@ module.exports = function (db) {
             res.json({ redirect: '/' });
         },
         (err, req, res, next) => {
-            console.error('Login error:', err);
+            // An inactive account is an expected state, not an incident. Now that the single
+            // local strategy rejects it before a session is ever created, every such attempt
+            // lands here - a stack trace for it would bury the errors that matter.
             if (err.message === 'Account not activated') {
-                res.redirect('/inactive');
-            } else {
-                res.status(401).json({ message: 'Invalid email or password' });
+                console.log('Rejected login for an inactive account');
+                return res.redirect('/inactive');
             }
+            console.error('Login error:', err);
+            res.status(401).json({ message: 'Invalid email or password' });
         }
     );
 
@@ -101,9 +105,9 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Password must be at least 8 characters long' });
             }
 
-            // Email format validation
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
+            // Normalise once so the address that is validated is the address that is stored.
+            const normalizedEmail = normalizeEmail(email);
+            if (!isWellFormedEmail(normalizedEmail)) {
                 return res.status(400).json({ error: 'Invalid email format' });
             }
 
@@ -111,7 +115,7 @@ module.exports = function (db) {
 
             // First check if email exists
             const existingUser = await new Promise((resolve, reject) => {
-                db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
+                db.get('SELECT id FROM users WHERE email = ?', [normalizedEmail], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
@@ -125,7 +129,7 @@ module.exports = function (db) {
             await new Promise((resolve, reject) => {
                 db.run(
                     'INSERT INTO users (first_name, last_name, email, password) VALUES (?, ?, ?, ?)',
-                    [firstName.trim(), lastName.trim(), email.toLowerCase(), hashedPassword],
+                    [firstName.trim(), lastName.trim(), normalizedEmail, hashedPassword],
                     function (err) {
                         if (err) reject(err);
                         resolve();
@@ -182,9 +186,9 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Password must be at least 8 characters long' });
             }
 
-            // Email format validation
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
+            // Normalise once so the address that is validated is the address that is stored.
+            const normalizedEmail = normalizeEmail(email);
+            if (!isWellFormedEmail(normalizedEmail)) {
                 return res.status(400).json({ error: 'Invalid email format' });
             }
 
@@ -192,7 +196,7 @@ module.exports = function (db) {
 
             db.run(
                 'INSERT INTO users (first_name, last_name, email, password, is_admin, is_active) VALUES (?, ?, ?, ?, 1, 1)',
-                [firstName.trim(), lastName.trim(), email.toLowerCase(), hashedPassword],
+                [firstName.trim(), lastName.trim(), normalizedEmail, hashedPassword],
                 (err) => {
                     if (err) {
                         return res.status(500).json({ error: 'Error creating admin user' });
@@ -241,29 +245,17 @@ module.exports = function (db) {
      */
     const RESET_REQUEST_ACKNOWLEDGEMENT = 'If an account exists for that address, a password reset link has been sent.';
 
-    /**
-     * Deliberately loose shape check, not RFC 5322 validation. Its job is to stop a
-     * missing address from reaching toLowerCase() (review finding 14) and to keep
-     * nonsense from costing a database read and an SMTP attempt.
-     */
-    function isWellFormedEmail(value) {
-        if (typeof value !== 'string') {
-            return false;
-        }
-        return /^[^\s@]+@[^\s@]+(\.[^\s@]+)+$/.test(value.trim());
-    }
-
     router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
-        const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+        const normalizedEmail = normalizeEmail(req.body?.email);
 
-        if (!isWellFormedEmail(rawEmail)) {
+        if (!isWellFormedEmail(normalizedEmail)) {
             return res.status(400).json({ error: 'Please enter a valid email address' });
         }
 
         try {
             // Find user
             const user = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM users WHERE email = ?', [rawEmail.toLowerCase()], (err, row) => {
+                db.get('SELECT * FROM users WHERE email = ?', [normalizedEmail], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });

@@ -147,6 +147,35 @@ describe('Auth Routes', () => {
             expect(response.body).toHaveProperty('message', 'Registration successful! You can now log in.');
         });
 
+        it('register_withAPaddedAndCasedAddress_shouldStoreTheNormalisedAddress', async () => {
+            // GIVEN a registration typed with stray spaces and capitals, as a pasted address
+            //      often arrives,
+            await request(app)
+                .post('/register')
+                .send({
+                    firstName: 'Padded',
+                    lastName: 'User',
+                    email: '  Padded@Example.COM ',
+                    password: 'password123',
+                    confirmPassword: 'password123'
+                })
+                .expect(200);
+
+            // THEN the stored address is the normalised one. It matters that this is asserted
+            //      here rather than at the lookup: password reset normalises before searching, so
+            //      a padded row would be findable at login and permanently invisible at reset -
+            //      and the masked reset response would hide the reason every single time.
+            const stored = await new Promise((resolve, reject) => {
+                testDb.get('SELECT email FROM users WHERE email = ?', ['padded@example.com'], (err, row) => {
+                    if (err) return reject(err);
+                    resolve(row);
+                });
+            });
+
+            expect(stored).toBeDefined();
+            expect(stored.email).toBe('padded@example.com');
+        });
+
         it('should reject duplicate email', async () => {
             const response = await request(app)
                 .post('/register')

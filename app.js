@@ -1,8 +1,6 @@
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy;
-const bcrypt = require('bcrypt');
 const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
 const path = require('path');
@@ -72,34 +70,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Add trust proxy setting for Express
 app.set('trust proxy', 1);  // Trust first proxy
 
-// Passport configuration
-passport.use(new LocalStrategy(
-  { usernameField: 'email' },
-  (email, password, done) => {
-    db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, user) => {
-      if (err) return done(err);
-      if (!user) return done(null, false, { message: 'Invalid email or password' });
-
-      bcrypt.compare(password, user.password, (err, isMatch) => {
-        if (err) return done(err);
-        if (!isMatch) return done(null, false, { message: 'Invalid email or password' });
-        return done(null, user);
-      });
-    });
-  }
-));
-
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
-
-passport.deserializeUser((id, done) => {
-  db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
-    if (err) return done(err);
-    if (!user) return done(null, false);
-    done(null, user);
-  });
-});
+// Passport configuration - the one local strategy, defined in config/passport.js.
+require('./config/passport')(passport, db);
 
 // Add the routes
 const authRoutes = require('./routes/auth')(db);

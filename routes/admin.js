@@ -3,6 +3,7 @@ const { isAuthenticated, isAuthenticatedApi, isAdmin } = require('../middleware/
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
 const { WEEK_DAYS, weekTitleFor, weekWindowFor } = require('../utils/weekView');
+const { normalizeEmail, isWellFormedEmail } = require('../utils/email');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
@@ -312,9 +313,9 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Email is required' });
             }
 
-            // Email format validation
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
+            // Normalise once so the address tested for collisions is the address written.
+            const normalizedEmail = normalizeEmail(email);
+            if (!isWellFormedEmail(normalizedEmail)) {
                 return res.status(400).json({ error: 'Invalid email format' });
             }
 
@@ -342,7 +343,7 @@ module.exports = function (db) {
             const existingUser = await new Promise((resolve, reject) => {
                 db.get(
                     'SELECT id FROM users WHERE email = ?',
-                    [email.toLowerCase()],
+                    [normalizedEmail],
                     (err, row) => {
                         if (err) reject(err);
                         resolve(row);
@@ -362,7 +363,7 @@ module.exports = function (db) {
             await new Promise((resolve, reject) => {
                 db.run(
                     'UPDATE users SET email = ?, password = ? WHERE id = ?',
-                    [email.toLowerCase(), hashedPassword, id],
+                    [normalizedEmail, hashedPassword, id],
                     (err) => {
                         if (err) reject(err);
                         resolve();
@@ -536,15 +537,15 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'First name, last name, and email are required' });
             }
 
-            // Email format validation
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^@\s]+$/;
-            if (!emailRegex.test(email)) {
+            // Normalise once so the address tested for collisions is the address written.
+            const normalizedEmail = normalizeEmail(email);
+            if (!isWellFormedEmail(normalizedEmail)) {
                 return res.status(400).json({ error: 'Invalid email format' });
             }
 
             // Check for existing email
             const existingUser = await new Promise((resolve, reject) => {
-                db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
+                db.get('SELECT id FROM users WHERE email = ?', [normalizedEmail], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
@@ -562,7 +563,7 @@ module.exports = function (db) {
             await new Promise((resolve, reject) => {
                 db.run(
                     'INSERT INTO users (first_name, last_name, email, password, is_active) VALUES (?, ?, ?, ?, 1)',
-                    [firstName.trim(), lastName.trim(), email.toLowerCase(), hashedPassword],
+                    [firstName.trim(), lastName.trim(), normalizedEmail, hashedPassword],
                     function (err) {
                         if (err) reject(err);
                         resolve(this.lastID);
