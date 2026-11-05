@@ -83,7 +83,7 @@ module.exports = function (db) {
     router.put('/:id', isAuthenticated, isAdmin, async (req, res) => {
         try {
             const templateId = parseInt(req.params.id);
-            const { name, description, slots } = req.body;
+            const { name, description, slots, isDefault } = req.body;
             
             // Check if template exists FIRST
             const existingTemplate = await new Promise((resolve, reject) => {
@@ -146,6 +146,13 @@ module.exports = function (db) {
                         resolve();
                     });
                 });
+            }
+
+            // Editing a template can also promote it to the default. Only promotion
+            // is honoured: quietly unsetting the only default would leave future
+            // weeks with no schedule to fall back on.
+            if (isDefault) {
+                await timeslotManager.setDefaultTemplate(templateId);
             }
 
             res.json({ message: 'Template updated successfully' });

@@ -7,10 +7,17 @@ let currentTimeslots = {};
 let isDirty = false;
 let currentEditSlot = null;
 let pendingChange = null;
+// The week as it is currently saved, so previewing a template can be undone.
+let appliedTimeslots = {};
+let appliedTemplateValue = null;
+// What the template dropdown currently shows, so a cancelled preview can put it back.
+let selectedTemplateValue = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize current timeslots from server data
     currentTimeslots = window.weekData?.timeslots || {};
+    appliedTimeslots = JSON.parse(JSON.stringify(currentTimeslots));
+    appliedTemplateValue = document.getElementById('templateSelect')?.value ?? null;
     
     // Initialize event listeners
     initializeEventListeners();
@@ -29,8 +36,10 @@ function initializeEventListeners() {
     
     if (templateSelect) {
         applyTemplateBtn.disabled = !templateSelect.value;
+        selectedTemplateValue = templateSelect.value;
         templateSelect.addEventListener('change', () => {
             applyTemplateBtn.disabled = !templateSelect.value;
+            previewSelectedTemplate(templateSelect);
         });
     }
     
@@ -386,23 +395,106 @@ async function saveWeekRequest(url, method, body, message) {
         }
         window.weekData = result.data;
         currentTimeslots = result.data.timeslots;
-        for (let day = 0; day < 7; day++) renderDay(day);
+        appliedTimeslots = JSON.parse(JSON.stringify(currentTimeslots));
+        renderAllDays();
         pendingChange = null;
         document.getElementById('conflictWarning').style.display = 'none';
         const config = result.data.config;
-        document.getElementById('scheduleSource').textContent =
-            `Saved schedule: ${config.template_name || 'Custom schedule'}${config.uses_default ? ' (from default)' : ''}. Template changes do not alter this week's saved times.`;
+        appliedTemplateValue = config.uses_default ? 'default' : (config.template_id || '');
+        showScheduleSource(savedScheduleLabel(config));
         const select = document.getElementById('templateSelect');
         if (!config.uses_default && !config.template_id && !select.querySelector('option[value=""]')) {
             select.add(new Option('Custom schedule', ''));
         }
-        select.value = config.uses_default ? 'default' : (config.template_id || '');
+        select.value = appliedTemplateValue;
+        selectedTemplateValue = appliedTemplateValue;
         document.getElementById('applyTemplateBtn').disabled = !select.value;
         markClean();
         showToast(message);
     } catch (error) {
         console.error('Error saving schedule:', error);
         showToast('Failed to save schedule', 'error');
+    }
+}
+
+function renderAllDays() {
+    for (let day = 0; day < 7; day++) {
+        renderDay(day);
+    }
+}
+
+function showScheduleSource(text) {
+    const element = document.getElementById('scheduleSource');
+    if (element) {
+        element.textContent = text;
+    }
+}
+
+function savedScheduleLabel(config) {
+    return `Saved schedule: ${config.template_name || 'Custom schedule'}${config.uses_default ? ' (from default)' : ''}. Template changes do not alter this week's saved times.`;
+}
+
+function templateLabelFor(value) {
+    const template = value === 'default'
+        ? (window.templates || []).find(candidate => candidate.is_default)
+        : (window.templates || []).find(candidate => String(candidate.id) === value);
+    return template ? template.name : 'the saved schedule';
+}
+
+/**
+ * Show a template in the grid without touching the saved week.
+ *
+ * Choosing a template used to do nothing until "Apply to this week" was pressed,
+ * which read as a broken control. The dropdown now loads the template so the
+ * choice is visible; "Apply to this week" is still what writes it to the week.
+ */
+async function previewSelectedTemplate(select) {
+    const value = select.value;
+
+    if (!value) {
+        return;
+    }
+
+    if (isDirty && !confirm('Previewing this template will discard your unsaved changes. Continue?')) {
+        select.value = selectedTemplateValue;
+        return;
+    }
+
+    if (value === appliedTemplateValue) {
+        currentTimeslots = JSON.parse(JSON.stringify(appliedTimeslots));
+        renderAllDays();
+        markClean();
+        selectedTemplateValue = value;
+        showScheduleSource(`Saved schedule: ${templateLabelFor(value)}.`);
+        return;
+    }
+
+    const template = value === 'default'
+        ? (window.templates || []).find(candidate => candidate.is_default)
+        : (window.templates || []).find(candidate => String(candidate.id) === value);
+
+    if (!template) {
+        showToast('Could not find that template to preview', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/admin/timeslot-templates/${template.id}`);
+        const result = await response.json();
+
+        if (!response.ok) {
+            showToast(result.error || 'Could not load that template', 'error');
+            return;
+        }
+
+        currentTimeslots = result.slots || {};
+        renderAllDays();
+        selectedTemplateValue = value;
+        showScheduleSource(`Previewing "${template.name}" - not applied to this week yet.`);
+        showToast(`Previewing "${template.name}" - press "Apply to this week" to use it`, 'success');
+    } catch (error) {
+        console.error('Template preview error:', error);
+        showToast('Could not load that template', 'error');
     }
 }
 

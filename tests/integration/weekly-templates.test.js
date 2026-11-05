@@ -118,6 +118,25 @@ describe('Weekly schedule templates', () => {
         expect(controls.text).toContain(`window.weekStart = '${nextKey}'`);
     });
 
+    it('promotes a template to the default when an update asks for it', async () => {
+        await makeTemplate('Standard', Object.values(manager.getFallbackTimeslots()).flat(), true);
+        const alternate = await makeTemplate('Promote me', [slot('9:00am')]);
+        expect((await manager.getDefaultTemplate()).name).toBe('Standard');
+
+        await request(app).put(`/admin/timeslot-templates/${alternate.id}`)
+            .send({ name: 'Promote me', slots: [slot('9:00am')], isDefault: true }).expect(200);
+
+        expect((await manager.getDefaultTemplate()).name).toBe('Promote me');
+    });
+
+    it('serves a template with its slots for the dropdown preview', async () => {
+        const alternate = await makeTemplate('Previewable', [slot('9:00am'), slot('3:00pm', 1)]);
+        const response = await request(app).get(`/admin/timeslot-templates/${alternate.id}`).expect(200);
+
+        expect(response.body.template.name).toBe('Previewable');
+        expect(response.body.slots[0].map(s => s.time)).toEqual(['9:00am', '3:00pm']);
+    });
+
     it('escapes a hostile slot label instead of letting it break out of the inline script', async () => {
         const hostile = '</script><script>alert(document.cookie)</script>';
         const template = await makeTemplate('Hostile label', [{ ...slot('8:00am'), label: hostile }]);
