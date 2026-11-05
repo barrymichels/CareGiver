@@ -42,12 +42,13 @@ function limitsEnabledByDefault() {
     return process.env.NODE_ENV !== 'test';
 }
 
-function makeLimiter(windowMs, max, message) {
+function makeLimiter(windowMs, limit, message, { skipSuccessfulRequests = false } = {}) {
     return rateLimit({
         windowMs,
-        max,
-        standardHeaders: true,
+        limit,
+        standardHeaders: 'draft-8',
         legacyHeaders: false,
+        skipSuccessfulRequests,
         handler: (req, res) => res.status(429).json({ error: message })
     });
 }
@@ -69,7 +70,15 @@ function buildAuthLimiters({ enabled = limitsEnabledByDefault() } = {}) {
     }
 
     return {
-        loginLimiter: makeLimiter(LOGIN_WINDOW_MS, LOGIN_MAX, TOO_MANY_ATTEMPTS),
+        // A caregiver signing in normally should not spend the guessing budget, so
+        // only refused attempts (401) are counted here.
+        loginLimiter: makeLimiter(LOGIN_WINDOW_MS, LOGIN_MAX, TOO_MANY_ATTEMPTS, {
+            skipSuccessfulRequests: true
+        }),
+        // Deliberately NOT skipping successes on the mailer route: a successful
+        // forgot-password response is the abusive outcome (it sends mail), so
+        // skipping it would let an attacker enumerate addresses and burn the
+        // Gmail send quota without ever being limited.
         forgotPasswordLimiter: makeLimiter(FORGOT_WINDOW_MS, FORGOT_MAX, TOO_MANY_RESETS),
         resetPasswordLimiter: makeLimiter(RESET_WINDOW_MS, RESET_MAX, TOO_MANY_ATTEMPTS)
     };

@@ -18,7 +18,10 @@ function makeApp(options) {
 
     const { loginLimiter, forgotPasswordLimiter, resetPasswordLimiter } = buildAuthLimiters(options);
 
-    app.post('/login', loginLimiter, (req, res) => res.json({ ok: true }));
+    // A refused credential check answers 401, which is what a password guesser
+    // provokes. Only refused attempts consume the login budget, so the fixture
+    // has to be refused for the budget to be observable here.
+    app.post('/login', loginLimiter, (req, res) => res.status(401).json({ message: 'Invalid email or password' }));
     app.post('/forgot-password', forgotPasswordLimiter, (req, res) => res.json({ ok: true }));
     app.post(RESET_ROUTE, resetPasswordLimiter, (req, res) => res.json({ ok: true }));
 
@@ -39,13 +42,36 @@ describe('auth rate limiters', () => {
         const app = makeApp({ enabled: true });
 
         for (const response of await Promise.all(hit(app, '/login', LOGIN_MAX))) {
-            expect(response.status).toBe(200);
+            expect(response.status).toBe(401);
         }
 
         const blocked = await request(app).post('/login').send({});
         expect(blocked.status).toBe(429);
         expect(blocked.body).toEqual({ error: expect.stringMatching(/too many/i) });
         expect(blocked.headers['retry-after']).toBeDefined();
+    });
+
+    it('does not charge a successful login against the guessing budget', async () => {
+        const app = express();
+        app.use(express.json());
+        app.set('trust proxy', 1);
+        app.post('/login', buildAuthLimiters({ enabled: true }).loginLimiter, (req, res) => {
+            // A real sign-in answers 200; a wrong password answers the app's 401.
+            res.status(req.headers['x-creds'] === 'good' ? 200 : 401).json({ ok: true });
+        });
+
+        const attempt = (creds) => request(app).post('/login').set('X-Creds', creds).send({});
+
+        for (let attemptNumber = 0; attemptNumber < LOGIN_MAX - 1; attemptNumber++) {
+            expect((await attempt('bad')).status).toBe(401);
+        }
+        // Signing in must not spend the budget. Without skipSuccessfulRequests the
+        // first of these is the 10th counted request and the next is refused.
+        for (let attemptNumber = 0; attemptNumber < 3; attemptNumber++) {
+            expect((await attempt('good')).status).toBe(200);
+        }
+        expect((await attempt('bad')).status).toBe(401);
+        expect((await attempt('bad')).status).toBe(429);
     });
 
     it('keeps separate budgets per endpoint', async () => {
@@ -55,14 +81,16 @@ describe('auth rate limiters', () => {
         expect((await request(app).post('/forgot-password').send({})).status).toBe(200);
         expect((await request(app).post('/login').send({})).status).toBe(429);
 
+        // The mailer route counts its *successful* responses on purpose: sending
+        // the reset mail is the abuse, so a 200 there must consume the budget.
         const forgot = await Promise.all(hit(app, '/forgot-password', FORGOT_MAX));
         expect(forgot[forgot.length - 1].status).toBe(429);
     });
 
-    it('answers 200 while inside budget', async () => {
+    it('answers within budget on each endpoint', async () => {
         const app = makeApp({ enabled: true });
 
-        expect((await request(app).post('/login').send({})).status).toBe(200);
+        expect((await request(app).post('/login').send({})).status).toBe(401);
         expect((await request(app).post('/forgot-password').send({})).status).toBe(200);
         expect((await request(app).post(RESET_ROUTE).send({})).status).toBe(200);
     });
@@ -72,7 +100,7 @@ describe('auth rate limiters', () => {
         const app = makeApp();
 
         const responses = await Promise.all(hit(app, '/login', 30));
-        expect(responses.every(response => response.status === 200)).toBe(true);
+        expect(responses.every(response => response.status === 401)).toBe(true);
     });
 
     it('is enabled outside the test environment', async () => {
@@ -105,7 +133,7 @@ describe('auth rate limiters', () => {
         await Promise.all(hit(app, '/login', LOGIN_MAX, '203.0.113.7'));
 
         expect((await request(app).post('/login').set('X-Forwarded-For', '203.0.113.7').send({})).status).toBe(429);
-        expect((await request(app).post('/login').set('X-Forwarded-For', '203.0.113.8').send({})).status).toBe(200);
+        expect((await request(app).post('/login').set('X-Forwarded-For', '203.0.113.8').send({})).status).toBe(401);
     });
 });
 
