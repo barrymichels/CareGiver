@@ -1,5 +1,4 @@
 const express = require('express');
-const router = express.Router();
 const { isAuthenticated, isAuthenticatedApi, isAdmin } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
@@ -8,6 +7,9 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
 module.exports = function (db) {
+    // Must stay inside the factory: a module-level router is shared by every require() call,
+    // so a second caller would silently receive the first caller's routes and database.
+    const router = express.Router();
     const dbHelper = new DatabaseHelper(db);
     const timeslotManager = new TimeslotManager(db);
 

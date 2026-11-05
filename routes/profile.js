@@ -1,10 +1,12 @@
 const express = require('express');
-const router = express.Router();
 const bcrypt = require('bcrypt');
 const { isAuthenticated, isActive } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 
 module.exports = function(db, notificationService) {
+    // Must stay inside the factory: a module-level router is shared by every require() call,
+    // so a second caller would silently receive the first caller's routes and database.
+    const router = express.Router();
     const dbHelper = new DatabaseHelper(db);
 
     // Get profile

@@ -1,10 +1,12 @@
 const express = require('express');
-const router = express.Router();
 const { isAuthenticated, isAdmin } = require('../../middleware/auth');
 const TimeslotManager = require('../../utils/timeslotManager');
 const { validateSlots } = require('../../utils/slotValidation');
 
 module.exports = function (db) {
+    // Must stay inside the factory: a module-level router is shared by every require() call,
+    // so a second caller would silently receive the first caller's routes and database.
+    const router = express.Router();
     const timeslotManager = new TimeslotManager(db);
 
     /**

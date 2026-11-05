@@ -1,8 +1,10 @@
 const express = require('express');
-const router = express.Router();
 const { isAuthenticated, isAdmin } = require('../middleware/auth');
 
 module.exports = function(db) {
+    // Must stay inside the factory: a module-level router is shared by every require() call,
+    // so a second caller would silently receive the first caller's routes and database.
+    const router = express.Router();
     // Get users management page
     router.get('/manage', isAuthenticated, isAdmin, async (req, res) => {
         try {
