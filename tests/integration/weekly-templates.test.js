@@ -206,7 +206,7 @@ describe('Weekly schedule templates', () => {
             update: ['put', `/admin/timeslots/${saved.config.id}`, { slots: [slot('8:00am')] }],
             create: ['post', '/admin/timeslots', { weekStart: nextKey, slots: [slot('8:00am')] }],
             copy: ['post', '/admin/timeslots/copy', { targetWeekStart: nextKey, sourceWeekStart: currentKey }],
-            reset: ['delete', `/admin/timeslots/${saved.config.id}`, {}]
+            reset: ['post', `/admin/timeslots/${saved.config.id}/reset-default`, {}]
         };
         const [method, url, body] = actions[action];
         const response = await request(app)[method](url).send({ ...body, ignoreConflicts: 'true' }).expect(409);

@@ -402,7 +402,7 @@ describe('Admin Timeslot Routes', () => {
         });
     });
 
-    describe('DELETE /admin/timeslots/:id', () => {
+    describe('POST /admin/timeslots/:id/reset-default', () => {
         let configId;
 
         beforeEach(async () => {
@@ -424,23 +424,47 @@ describe('Admin Timeslot Routes', () => {
             configId = result.lastID;
         });
 
-        it('should reset timeslot configuration to the default', async () => {
+        it('resetDefault_withAFutureWeek_shouldReplaceTheWeekWithTheDefaultSchedule', async () => {
             const response = await agent
-                .delete(`/admin/timeslots/${configId}`)
+                .post(`/admin/timeslots/${configId}/reset-default`)
                 .expect(200);
 
             expect(response.body).toHaveProperty('message', 'Timeslot configuration reset to default');
         });
 
-        it('should reject deletion of non-existent configuration', async () => {
+        /**
+         * Locks in the semantics this route used to contradict: it resets a week, it
+         * does not remove it. If anyone later decides that DELETE should genuinely
+         * delete, this test is the thing they have to argue with - and it will need
+         * an answer for the week's assignments and availability first.
+         */
+        it('resetDefault_withAFutureWeek_shouldNotRemoveTheConfigurationRow', async () => {
+            await agent.post(`/admin/timeslots/${configId}/reset-default`).expect(200);
+
+            const remaining = await new Promise((resolve, reject) => {
+                testDb.get(
+                    'SELECT id, week_start FROM timeslot_configurations WHERE id = ?',
+                    [configId],
+                    (err, row) => {
+                        if (err) reject(err);
+                        resolve(row);
+                    }
+                );
+            });
+
+            expect(remaining).toBeDefined();
+            expect(remaining.id).toBe(configId);
+        });
+
+        it('resetDefault_withAnUnknownConfigurationId_shouldReturnNotFound', async () => {
             const response = await agent
-                .delete('/admin/timeslots/99999')
+                .post('/admin/timeslots/99999/reset-default')
                 .expect(404);
 
             expect(response.body).toHaveProperty('error', 'Configuration not found');
         });
 
-        it('should reject deletion of past week configurations', async () => {
+        it('resetDefault_withAPastWeek_shouldRefuseToTouchIt', async () => {
             // Create a past week configuration
             const pastDate = new Date();
             pastDate.setDate(pastDate.getDate() - 14);
@@ -458,10 +482,10 @@ describe('Admin Timeslot Routes', () => {
             });
 
             const response = await agent
-                .delete(`/admin/timeslots/${result.lastID}`)
+                .post(`/admin/timeslots/${result.lastID}/reset-default`)
                 .expect(400);
 
-            expect(response.body).toHaveProperty('error', 'Cannot delete past week configurations');
+            expect(response.body).toHaveProperty('error', "Cannot reset a past week's configuration");
         });
     });
 });

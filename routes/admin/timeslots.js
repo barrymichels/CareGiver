@@ -268,13 +268,25 @@ module.exports = function (db) {
     });
 
     /**
-     * DELETE /admin/timeslots/:id - Delete timeslot configuration
+     * POST /admin/timeslots/:id/reset-default - replace one week's slots with the
+     * default schedule.
+     *
+     * Deliberately POST, not DELETE: this never removes the configuration row. The
+     * week keeps its configuration and ends up holding the default slot set, so a
+     * DELETE verb here described an operation the code does not perform, and the
+     * response body ('reset to default') already contradicted it. Renaming the verb
+     * is the fix the review asked for; real deletion would need answers about the
+     * week's assignments and availability, which nobody has asked for yet.
+     *
+     * No browser code calls this route - the page's own "Reset to Default" button
+     * goes through /apply-template. It is kept because the integration suite drives
+     * every reset mechanism side by side and this is one of them.
      */
-    router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
+    router.post('/:id/reset-default', isAuthenticated, isAdmin, async (req, res) => {
         try {
             const configId = parseInt(req.params.id);
-            
-            // Get configuration to check if it can be deleted
+
+            // Get configuration to check if it can be reset
             const config = await new Promise((resolve, reject) => {
                 db.get(`
                     SELECT * FROM timeslot_configurations WHERE id = ?
@@ -294,7 +306,7 @@ module.exports = function (db) {
             }
             
             if (!timeslotManager.canModifyWeek(weekStart)) {
-                return res.status(400).json({ error: 'Cannot delete past week configurations' });
+                return res.status(400).json({ error: "Cannot reset a past week's configuration" });
             }
 
             const result = await timeslotManager.applyTemplate(weekStart, null, req.user.id, {
@@ -303,8 +315,8 @@ module.exports = function (db) {
             res.json({ message: 'Timeslot configuration reset to default', data: result });
         } catch (error) {
             if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });
-            console.error('Error deleting timeslot configuration:', error);
-            res.status(500).json({ error: 'Failed to delete timeslot configuration' });
+            console.error('Error resetting timeslot configuration:', error);
+            res.status(500).json({ error: 'Failed to reset timeslot configuration' });
         }
     });
 
