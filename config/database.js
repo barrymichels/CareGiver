@@ -1,6 +1,14 @@
 const sqlite3 = require('sqlite3');
 
 function configureDatabase(dbPath) {
+    // sqlite3 aborts with 'TypeError: String expected' if this is undefined, which never
+    // mentions the variable and looks like a bug in this file. Name it instead.
+    if (typeof dbPath !== 'string' || dbPath.trim() === '') {
+        throw new Error(
+            'No database path configured. Set the DB_PATH environment variable ' +
+            '(for example DB_PATH=./data/database.sqlite). See .env.sample.'
+        );
+    }
     // Create database with robust settings
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
         if (err) {

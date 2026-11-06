@@ -121,6 +121,14 @@ describe('Database Configuration', () => {
         }
     });
 
+    it('should refuse an unconfigured database path and name the variable', () => {
+        // The whole point is the message: an operator must not need to read this file
+        // to learn which environment variable is missing.
+        for (const missing of [undefined, null, '', '   ']) {
+            expect(() => configureDatabase(missing)).toThrow(/DB_PATH/);
+        }
+    });
+
     it('should handle database open errors', async () => {
         // Mock console.error
         const mockConsoleError = jest.fn();
