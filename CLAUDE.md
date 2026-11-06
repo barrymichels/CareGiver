@@ -94,9 +94,13 @@ Routes follow factory pattern: `module.exports = function(db) { return router; }
 - Comprehensive keyboard navigation support
 
 **PWA Features:**
-- Service worker with network-first/cache-first strategies
+- Service worker: cache-first for PRECACHED static assets only. Every credentialed
+  request (pages, /api, /export-calendar) is network-only and is never written to
+  CacheStorage - the household shares tablets, and an offline replay of another
+  family member's dashboard is a data leak, not a nicety. Offline dynamic requests
+  return 503 with a short notice instead of a stale page.
 - Web app manifest with install prompts
-- Offline fallback for static assets and cached content
+- Offline fallback for static assets only (see above)
 - Mobile-optimized responsive design
 
 ### Date Handling Patterns
