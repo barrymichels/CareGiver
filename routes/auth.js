@@ -3,8 +3,44 @@ const passport = require('passport');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
-const { buildAuthLimiters } = require('../middleware/rateLimit');
+const { rateLimit } = require('express-rate-limit');
+const { buildAuthLimiters, limitsEnabledByDefault } = require('../middleware/rateLimit');
 const { normalizeEmail, isWellFormedEmail } = require('../utils/email');
+
+// Kept in step with the same-named helper in routes/profile.js: both password-change
+// paths must evict sessions, and utils/ is not part of this change's scope, so the two
+// routes carry identical copies. See the copy in routes/profile.js for the full rationale:
+// the session store (connect-sqlite3, see app.js) is a separate SQLite database, and the
+// serialised session's `passport.user` id is the only link from a row to an account.
+function destroyUserSessions(req, userId) {
+    return new Promise((resolve) => {
+        const store = req.sessionStore;
+        const sessionDb = store && store.db;
+        if (!sessionDb || typeof sessionDb.all !== 'function' || typeof sessionDb.run !== 'function') {
+            return resolve();
+        }
+        const table = store.table || 'sessions';
+        sessionDb.all(`SELECT sid, sess FROM ${table}`, (err, rows) => {
+            const sids = err || !rows ? [] : rows
+                .filter((row) => {
+                    try {
+                        return Number(JSON.parse(row.sess).passport.user) === Number(userId);
+                    } catch (parseError) {
+                        return false;
+                    }
+                })
+                .map((row) => row.sid);
+            if (sids.length === 0) {
+                return resolve();
+            }
+            sessionDb.run(
+                `DELETE FROM ${table} WHERE sid IN (${sids.map(() => '?').join(', ')})`,
+                sids,
+                () => resolve()
+            );
+        });
+    });
+}
 
 // Create transporter factory function instead of module-level instance
 function createTransporter() {
@@ -33,6 +69,27 @@ module.exports = function (db) {
     // Built once per router. Disabled automatically under NODE_ENV=test unless
     // RATE_LIMITS=on, so the existing auth suite keeps its current behaviour.
     const { loginLimiter, forgotPasswordLimiter, resetPasswordLimiter } = buildAuthLimiters();
+
+    // Registration was the one unthrottled auth route left. It stays deliberately out of
+    // buildAuthLimiters (middleware/rateLimit.js belongs to a different review), but it
+    // shares that file's kill-switch and 429 body shape. Counted on every attempt rather
+    // than only failures: the budget prices both account spam and the duplicate-email
+    // oracle below, and a family signing up its members never spends five an hour.
+    const REGISTER_WINDOW_MS = 60 * 60 * 1000;
+    const REGISTER_MAX = 5;
+    const registerLimiter = limitsEnabledByDefault()
+        ? rateLimit({
+            windowMs: REGISTER_WINDOW_MS,
+            limit: REGISTER_MAX,
+            standardHeaders: 'draft-8',
+            legacyHeaders: false,
+            handler: (req, res) => {
+                const seconds = Number(res.getHeader('Retry-After')) || REGISTER_WINDOW_MS / 1000;
+                const minutes = Math.max(1, Math.ceil(seconds / 60));
+                res.status(429).json({ error: `Too many registration attempts. Try again in about ${minutes} minutes.` });
+            }
+        })
+        : (req, res, next) => next();
 
     // Check if setup is required
     function checkSetupRequired() {
@@ -88,8 +145,21 @@ module.exports = function (db) {
     );
 
     // Register submission
-    router.post('/register', async (req, res) => {
+    router.post('/register', registerLimiter, async (req, res) => {
         try {
+            // A fresh instance is mid-setup, and whoever writes the first row decides
+            // who owns it: POST /setup refuses with "Setup already completed" the moment
+            // any user exists, so a bot that registers first would leave the household
+            // facing an instance with no admin at all and no way back into /setup but
+            // manual database surgery. 428 states that a precondition - finishing
+            // setup - is unmet, distinctly from the 400s this route uses for bad input.
+            const needsSetup = await checkSetupRequired();
+            if (needsSetup) {
+                return res.status(428).json({
+                    error: 'Initial setup is not complete. Create the first admin account at /setup before registering.'
+                });
+            }
+
             const { firstName, lastName, email, password, confirmPassword } = req.body;
 
             // Basic validation
@@ -121,6 +191,10 @@ module.exports = function (db) {
                 });
             });
 
+            // Enumeration note: unlike forgot-password, this route answers a duplicate
+            // address plainly. Masking it would make a real second signup fail with no
+            // explanation while the account already exists - and the register limiter
+            // prices the oracle at five probes an hour per address.
             if (existingUser) {
                 return res.status(400).json({ error: 'Email already registered' });
             }
@@ -224,7 +298,19 @@ module.exports = function (db) {
             successRedirect: '/',
             failureRedirect: '/login',
             failureFlash: true
-        })
+        }),
+        // The verify callback rejects deactivated accounts with a thrown Error, which
+        // passport hands straight to the next error handler - without this the victim of
+        // (finding 2)'s deactivation bypass would land on a raw 500 page instead of the
+        // login screen. The visitor has no session at this point, so /inactive, which
+        // requires one, is not an option; the redirect matches failureRedirect.
+        (err, req, res, next) => {
+            if (err.message === 'Account not activated') {
+                console.log('Rejected OAuth login for an inactive account');
+                return res.redirect('/login');
+            }
+            next(err);
+        }
     );
 
     // Forgot password routes
@@ -320,9 +406,13 @@ module.exports = function (db) {
             });
 
             if (!user) {
-                // For test purposes, return just the view name without full path
-                return res.json({
-                    view: 'reset-password-error.ejs',
+                // A human clicking an expired mail link gets the error page, at the 400
+                // its link deserves. This used to answer res.json({ view: 'reset-password-error.ejs',
+                // ... }) - "For test purposes" - which showed real users raw JSON naming
+                // an internal template and left that page never rendered by anything.
+                // The view reads exactly message and action (plus the app-wide
+                // getPageTitle), and req.user is undefined on this unauthenticated route.
+                return res.status(400).render('reset-password-error', {
                     message: 'Password reset link is invalid or has expired.',
                     action: {
                         text: 'Back to Login',
@@ -333,9 +423,10 @@ module.exports = function (db) {
 
             res.render('reset-password', { token });
         } catch (error) {
-            // For test purposes, return just the view name without full path
-            res.json({
-                view: 'reset-password-error.ejs',
+            // A server-side fault gets a 500 so monitoring can see it, and the same
+            // error page for the human reading it.
+            console.error('GET /reset-password/:token failed:', error);
+            res.status(500).render('reset-password-error', {
                 message: 'An error occurred while processing your request.',
                 action: {
                     text: 'Back to Login',
@@ -387,6 +478,12 @@ module.exports = function (db) {
                     }
                 );
             });
+
+            // Whoever is logged in with the old password - quite possibly the thief the
+            // victim is resetting because of - keeps their session cookie otherwise.
+            // Destroy every stored session for this account; the legitimate user who
+            // just went through the mailed link has none to lose.
+            await destroyUserSessions(req, user.id);
 
             res.json({ message: 'Password has been reset successfully. You can now log in with your new password.' });
 
