@@ -1,6 +1,7 @@
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
+const helmet = require('helmet');
 const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
 const path = require('path');
@@ -13,6 +14,54 @@ const NotificationService = require('./services/notificationService');
 
 const app = express();
 let notificationService = null;
+
+// Express adds `X-Powered-By: Express`, which tells anyone probing the container
+// which stack and roughly which versions to attack for free.
+app.disable('x-powered-by');
+
+// Security headers, mounted before express.static and before every router so no
+// response escapes without them - a static miss and an error page included.
+//
+// The frame guard is the load-bearing one here: public/js/admin.js sends
+// PUT /admin/users/:id with nothing but the session cookie, so an iframe with an
+// overlay on any page in the household could flip a user's active/admin flags
+// with a borrowed click. frame-ancestors 'deny' is what modern browsers honour
+// and X-Frame-Options: DENY is the same message to the older ones.
+//
+// CSP keeps 'unsafe-inline' for scripts and styles on purpose, because the views
+// genuinely need it: dashboard.ejs, admin/timeslots.ejs and
+// admin/manage-availability.ejs run inline <script> blocks (the service-worker
+// registration among them), admin/timeslots.ejs and admin/users.ejs wire buttons
+// through inline onclick= attributes (so script-src-attr needs it too), and
+// inactive.ejs and admin/timeslots.ejs carry <style> blocks that timeslot-manager.js
+// then extends at runtime. Tightening this to nonces requires moving that code out
+// of the templates first, which is a separate change. What the policy does enforce
+// today is the origin: an injected script still cannot fetch or connect anywhere
+// but this app.
+//
+// upgrade-insecure-requests is deliberately absent. docker-compose.yml publishes
+// plain HTTP on :3000 and LAN installs commonly have no TLS at all; upgrading
+// same-origin asset requests to https would take those screens down.
+app.use(helmet({
+  // helmet 8 defaults this to SAMEORIGIN; 'deny' is the stronger guard and is
+  // what matches the frame-ancestors directive below (SAMEORIGIN would still let
+  // any page on this origin frame the admin screen).
+  xFrameOptions: { action: 'deny' },
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'deny'"],
+      imgSrc: ["'self'", 'data:'], // admin/timeslots.ejs inlines an svg as a data uri
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"]
+    }
+  }
+}));
 
 // Database connection and initialization first
 const db = configureDatabase(process.env.DB_PATH);
@@ -46,6 +95,28 @@ app.locals.getPageTitle = getPageTitle;
     process.exit(1);
   }
 })();
+
+// Week and day keys come from the *local* calendar (utils/weekView.js builds
+// `day_date` strings from local date components), and that has only ever been run
+// and reviewed west of UTC - docker-compose.yml sets TZ=America/New_York. East of
+// UTC the local day and the UTC day disagree around midnight, which can put a
+// shift on the neighbouring day. This is a guard, not a fix: the date arithmetic
+// stays as it is, so the warning is what tells an operator to set TZ.
+const localUtcOffsetMinutes = -new Date().getTimezoneOffset();
+if (localUtcOffsetMinutes > 0) {
+  console.error([
+    '',
+    '=============================================================================',
+    '  UNSUPPORTED TIMEZONE - the schedule may be a day off',
+    `  Resolved timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone} ` +
+      `(UTC+${String(Math.floor(localUtcOffsetMinutes / 60)).padStart(2, '0')}:${String(localUtcOffsetMinutes % 60).padStart(2, '0')})`,
+    '  Week and day keys are derived from the local calendar and are only',
+    '  validated for zones west of UTC. Users may see shifts on the wrong day.',
+    '  Fix: set TZ to a zone west of UTC (e.g. TZ=America/New_York) and restart.',
+    '=============================================================================',
+    ''
+  ].join('\n'));
+}
 
 // Middleware
 app.use(express.json());

@@ -26,6 +26,42 @@ function formatDateToICS(date) {
     return `${year}${month}${day}T${hours}${minutes}00`;
 }
 
+/**
+ * UID of one shift, as RFC 5545 requires every VEVENT to have.
+ *
+ * Calendar clients dedupe a recurring subscription on this string alone: get it
+ * wrong and every refresh adds another copy of the shift instead of updating the
+ * one it already has. `(day_date, time_slot)` is UNIQUE in `assignments`, so
+ * those two parts identify the row for as long as it exists, and the same shift
+ * produces the same UID however often it is fetched.
+ *
+ * The host part is a literal, not `req.hostname` or BASE_URL, on purpose: the
+ * same subscription is reached through the container IP, the LAN name and the
+ * proxy domain, and a host-dependent UID would make each of them a different
+ * event and put the duplicates straight back.
+ */
+function eventUid(assignment) {
+    const slot = String(assignment.time_slot).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return `waynescheduler-${assignment.day_date}-${slot}@waynescheduler`;
+}
+
+/** DTSTAMP - RFC 5545's second mandatory VEVENT property, always UTC. */
+function formatUtcToICS(date) {
+    const pad = (num) => (num < 10 ? '0' : '') + num;
+
+    return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}`
+        + `T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+}
+
+/** Escape a value for an ICS TEXT field (RFC 5545 3.3.11). */
+function escapeICSText(value) {
+    return String(value)
+        .replace(/\\/g, '\\\\')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,')
+        .replace(/\r?\n/g, '\\n');
+}
+
 module.exports = (db) => {
     // Must stay inside the factory: a module-level router is shared by every require() call,
     // so a second caller would silently receive the first caller's routes and database.
@@ -56,9 +92,11 @@ module.exports = (db) => {
                     });
             });
 
-            if (assignments.length === 0) {
-                return res.status(404).json({ error: 'No shifts found for this week' });
-            }
+            // An empty week is a valid answer, not an error: a subscription whose
+            // fetch fails gets marked broken by the client and stops refreshing,
+            // so the caregiver whose week happens to be empty loses the feed for
+            // every later week too. Always emit a well-formed VCALENDAR.
+            const generatedAt = formatUtcToICS(new Date());
 
             // Generate ICS content
             let icsContent = [
@@ -98,9 +136,11 @@ module.exports = (db) => {
 
                 icsContent = icsContent.concat([
                     'BEGIN:VEVENT',
+                    `UID:${eventUid(assignment)}`,
+                    `DTSTAMP:${generatedAt}`,
                     `DTSTART:${formatDateToICS(startDate)}`,
                     `DTEND:${formatDateToICS(endDate)}`,
-                    `SUMMARY:${process.env.ICS_EVENT_SUMMARY || 'CareGiver Shift'}`,
+                    `SUMMARY:${escapeICSText(process.env.ICS_EVENT_SUMMARY || 'CareGiver Shift')}`,
                     'BEGIN:VALARM',
                     'ACTION:DISPLAY',
                     'DESCRIPTION:Reminder',
@@ -112,8 +152,10 @@ module.exports = (db) => {
 
             icsContent.push('END:VCALENDAR');
 
-            // Send the file
-            res.setHeader('Content-Type', 'text/calendar');
+            // Send the file. The charset matters: an ICS body with no charset is
+            // read as ISO-8859-1 by several clients, which mangles any shift name
+            // with a non-ASCII character in it.
+            res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename=schedule-${sqlStart}.ics`);
             res.send(icsContent.join('\r\n'));
 

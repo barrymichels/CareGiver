@@ -48,6 +48,9 @@ function createTransporter() {
         host: process.env.SMTP_HOST,
         port: parseInt(process.env.SMTP_PORT),
         secure: process.env.SMTP_SECURE === 'true',
+        // nodemailer refuses a message with no sender, and .env.sample has always
+        // advertised SMTP_FROM, so without this the reset mail could never leave.
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
         auth: {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
