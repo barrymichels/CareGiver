@@ -1,5 +1,8 @@
 const express = require('express');
 const { isAuthenticated, isActive } = require('../middleware/auth');
+// Only for MORNING_SUMMARY_WINDOW: the hours belong to the scheduler, and the API has
+// to refuse what the scheduler cannot deliver rather than hardcoding them a second time.
+const NotificationService = require('../services/notificationService');
 
 module.exports = function(db, notificationService) {
     // Must stay inside the factory: a module-level router is shared by every require() call,
@@ -86,13 +89,34 @@ module.exports = function(db, notificationService) {
                         error: 'Invalid time format. Use HH:MM format' 
                     });
                 }
+
+                // The morning summary job only wakes inside this window. Any other time
+                // would be saved, confirmed as updated, and then never sent - with
+                // nothing in the log and nothing in the UI to say so.
+                if (!notificationService.isSchedulableMorningSummaryTime(morningSummaryTime)) {
+                    const summaryWindow = NotificationService.MORNING_SUMMARY_WINDOW;
+                    return res.status(400).json({
+                        error: `Morning summaries can only be scheduled between ${summaryWindow.firstTime} and ${summaryWindow.lastTime}`
+                    });
+                }
             }
 
-            const preferences = {
-                notificationAdvanceMinutes,
-                morningSummaryEnabled,
-                morningSummaryTime
-            };
+            // Only the fields the client actually sent. Building all three keys, with
+            // undefined in the absent ones, is what let a one-field save overwrite the
+            // other two with their defaults.
+            const preferences = {};
+
+            if (notificationAdvanceMinutes !== undefined) {
+                preferences.notificationAdvanceMinutes = notificationAdvanceMinutes;
+            }
+
+            if (morningSummaryEnabled !== undefined) {
+                preferences.morningSummaryEnabled = morningSummaryEnabled;
+            }
+
+            if (morningSummaryTime !== undefined) {
+                preferences.morningSummaryTime = morningSummaryTime;
+            }
 
             const success = await notificationService.updateNotificationPreferences(
                 req.user.id, 

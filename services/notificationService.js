@@ -2,6 +2,25 @@ const webpush = require('web-push');
 const cron = require('node-cron');
 const DatabaseHelper = require('../utils/dbHelper');
 
+// The morning-summary job wakes every minute during these hours, so 06:00-10:59 is
+// exactly the range a saved preference can ever be delivered in. Anywhere outside it
+// is a time that can only be stored and silently never sent, so the API refuses it.
+// Both the cron expression and the API validation read these numbers, which is the
+// only reason the two can never drift apart.
+const MORNING_SUMMARY_FIRST_HOUR = 6;
+const MORNING_SUMMARY_LAST_HOUR = 10;
+const MORNING_SUMMARY_WINDOW = Object.freeze({
+    firstHour: MORNING_SUMMARY_FIRST_HOUR,
+    lastHour: MORNING_SUMMARY_LAST_HOUR,
+    firstTime: `${String(MORNING_SUMMARY_FIRST_HOUR).padStart(2, '0')}:00`,
+    lastTime: `${String(MORNING_SUMMARY_LAST_HOUR).padStart(2, '0')}:59`,
+    cron: `* ${MORNING_SUMMARY_FIRST_HOUR}-${MORNING_SUMMARY_LAST_HOUR} * * *`
+});
+
+// A push service answers these when the endpoint is gone for good. Anything else is
+// somebody having a bad minute, and pruning on that would silently unsubscribe them.
+const DEAD_SUBSCRIPTION_STATUS_CODES = new Set([404, 410]);
+
 class NotificationService {
     constructor(db) {
         this.db = db;
@@ -52,8 +71,8 @@ class NotificationService {
             scheduled: false
         });
 
-        // Send morning summaries every minute during 6-10 AM for more flexibility
-        const morningSummaryJob = cron.schedule('* 6-10 * * *', () => {
+        // Send morning summaries every minute inside the schedulable window
+        const morningSummaryJob = cron.schedule(MORNING_SUMMARY_WINDOW.cron, () => {
             this.sendMorningSummaries();
         }, {
             scheduled: false
@@ -68,7 +87,7 @@ class NotificationService {
 
         console.log('📅 Notification schedulers started:');
         console.log('   - Shift reminders: Every minute');
-        console.log('   - Morning summaries: Every minute during 6-10 AM');
+        console.log(`   - Morning summaries: Every minute during ${MORNING_SUMMARY_WINDOW.firstTime}-${MORNING_SUMMARY_WINDOW.lastTime}`);
     }
 
     async subscribeUser(userId, subscription) {
@@ -110,27 +129,51 @@ class NotificationService {
         }
     }
 
-    async updateNotificationPreferences(userId, preferences) {
+    /**
+     * Write only the preferences the caller actually provided.
+     *
+     * The route validates each field with `!== undefined`, so partial updates are the
+     * contract. Filling absent keys with defaults used to overwrite them: saving just
+     * the summary time reset a 45-minute reminder to 15 and switched summaries back on
+     * for someone who had turned them off.
+     */
+    async updateNotificationPreferences(userId, preferences = {}) {
         try {
-            const { 
-                notificationAdvanceMinutes = 15, 
-                morningSummaryEnabled = true, 
-                morningSummaryTime = '07:00' 
-            } = preferences;
+            const writes = [];
+            const params = [];
+
+            const write = (column, value) => {
+                writes.push(`${column} = ?`);
+                params.push(value);
+            };
+
+            if (preferences.notificationAdvanceMinutes !== undefined) {
+                write('notification_advance_minutes', preferences.notificationAdvanceMinutes);
+            }
+            if (preferences.morningSummaryEnabled !== undefined) {
+                write('morning_summary_enabled', preferences.morningSummaryEnabled ? 1 : 0);
+            }
+            if (preferences.morningSummaryTime !== undefined) {
+                write('morning_summary_time', preferences.morningSummaryTime);
+            }
+
+            // Nothing offered, nothing to do. Reporting success without a write keeps
+            // the caller honest: no defaults reached the row as a side effect.
+            if (writes.length === 0) return true;
 
             // First, ensure the user has a notification_settings record
             await this.dbHelper.runWithRetry(
                 `INSERT OR IGNORE INTO notification_settings (user_id) VALUES (?)`,
                 [userId]
             );
-            
-            // Then update only the preference fields, preserving push subscription data
+
+            // Then update only the fields that were provided, preserving both the
+            // other preferences and the push subscription data on the same row.
             await this.dbHelper.runWithRetry(
                 `UPDATE notification_settings 
-                 SET notification_advance_minutes = ?, morning_summary_enabled = ?, 
-                     morning_summary_time = ?, updated_at = CURRENT_TIMESTAMP
+                 SET ${writes.join(', ')}, updated_at = CURRENT_TIMESTAMP
                  WHERE user_id = ?`,
-                [notificationAdvanceMinutes, morningSummaryEnabled ? 1 : 0, morningSummaryTime, userId]
+                [...params, userId]
             );
 
             return true;
@@ -138,6 +181,20 @@ class NotificationService {
             console.error('Error updating notification preferences:', error);
             return false;
         }
+    }
+
+    /**
+     * Whether a HH:MM preference can ever be delivered, given the cron it is stored
+     * for. Exposed so the API can refuse an unschedulable time instead of accepting
+     * it and then never sending anything.
+     */
+    isSchedulableMorningSummaryTime(morningSummaryTime) {
+        const [hours, minutes] = String(morningSummaryTime).split(':').map(Number);
+        if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return false;
+
+        const minuteOfDay = hours * 60 + minutes;
+        return minuteOfDay >= MORNING_SUMMARY_WINDOW.firstHour * 60 &&
+               minuteOfDay <= MORNING_SUMMARY_WINDOW.lastHour * 60 + 59;
     }
 
     async getNotificationPreferences(userId) {
@@ -332,9 +389,17 @@ class NotificationService {
                             console.log(`🌅 Sending morning summaries at ${currentTime}`);
                             logActivity = true;
                         }
-                        await this.sendMorningSummary(user, today);
-                        await this.markMorningSummarySent(user.user_id, today);
-                        console.log(`📨 Morning summary sent to ${user.first_name} ${user.last_name}`);
+                        const sent = await this.sendMorningSummary(user, today);
+                        if (sent) {
+                            await this.markMorningSummarySent(user.user_id, today);
+                            console.log(`📨 Morning summary sent to ${user.first_name} ${user.last_name}`);
+                        } else {
+                            // Deliberately not recording it: the UNIQUE(user_id, date)
+                            // row is what stops the rest of the window from pushing a
+                            // second summary, so writing it after a failed send would
+                            // spend the user's only attempt on a push that never left.
+                            console.error(`⚠️ Morning summary push to ${user.first_name} ${user.last_name} failed; leaving it unsent so the next run can retry`);
+                        }
                     }
                 }
             }
@@ -374,6 +439,12 @@ class NotificationService {
         }
     }
 
+    /**
+     * Compose and push today's summary.
+     *
+     * Returns whether the push actually went out. The caller writes the dedupe row,
+     * and a day marked sent on a push that failed is a day the user gets nothing.
+     */
     async sendMorningSummary(user, date) {
         try {
             // Get today's assignments for the user
@@ -411,10 +482,14 @@ class NotificationService {
                 actions: []
             };
 
-            await this.sendPushNotification(user.push_subscription, payload);
+            const sent = await this.sendPushNotification(user.push_subscription, payload);
+            if (!sent) return false;
+
             console.log(`🌅 Morning summary sent to ${user.first_name} ${user.last_name}`);
+            return true;
         } catch (error) {
             console.error('Error sending morning summary:', error);
+            return false;
         }
     }
 
@@ -462,10 +537,12 @@ class NotificationService {
                 endpoint: subscriptionData?.endpoint || 'unknown'
             });
             
-            // If subscription is invalid, disable it
-            if (error.statusCode === 410) {
-                console.log('📱 Push subscription expired, disabling...');
-                // TODO: Remove invalid subscription from database
+            // If the endpoint is gone for good, delete it. Otherwise this row stays
+            // push_enabled = 1 and every reminder job keeps POSTing to a dead URL
+            // forever, while the user just quietly stops receiving anything.
+            if (DEAD_SUBSCRIPTION_STATUS_CODES.has(error.statusCode)) {
+                console.log(`📱 Push subscription is gone (${error.statusCode}), removing it...`);
+                await this.removeSubscriptionForEndpoint(subscriptionData);
             } else if (error.statusCode === 400) {
                 console.log('📱 Invalid push request - check subscription format');
             } else if (error.statusCode === 413) {
@@ -473,6 +550,49 @@ class NotificationService {
             }
             
             return false;
+        }
+    }
+
+    /**
+     * Clear the stored subscription whoever owns it.
+     *
+     * The push service only tells us the endpoint failed, not which user it belongs
+     * to, so the endpoint inside the stored JSON is the join key.
+     */
+    async removeSubscriptionForEndpoint(subscriptionData) {
+        try {
+            const targetEndpoint = this.readEndpoint(subscriptionData);
+            if (!targetEndpoint) return false;
+
+            const rows = await new Promise((resolve, reject) => {
+                this.db.all(
+                    'SELECT user_id, push_subscription FROM notification_settings WHERE push_subscription IS NOT NULL',
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows || []);
+                    }
+                );
+            });
+
+            const owners = rows.filter(row => this.readEndpoint(row.push_subscription) === targetEndpoint);
+            for (const row of owners) {
+                await this.unsubscribeUser(row.user_id);
+            }
+            return owners.length > 0;
+        } catch (error) {
+            console.error('Error removing dead push subscription:', error);
+            return false;
+        }
+    }
+
+    readEndpoint(subscriptionData) {
+        try {
+            const parsed = typeof subscriptionData === 'string'
+                ? JSON.parse(subscriptionData)
+                : subscriptionData;
+            return parsed?.endpoint || null;
+        } catch (error) {
+            return null;
         }
     }
 
@@ -485,5 +605,8 @@ class NotificationService {
         this.scheduledJobs.clear();
     }
 }
+
+// Shared with the API, which refuses a summary time the scheduler can never deliver.
+NotificationService.MORNING_SUMMARY_WINDOW = MORNING_SUMMARY_WINDOW;
 
 module.exports = NotificationService;
