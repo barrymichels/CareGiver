@@ -68,7 +68,22 @@ async function getUserByEmail(email) {
 }
 
 async function clearTestDb() {
-    const tables = ['users', 'availability', 'assignments', 'user_preferences'];
+    // Child-first order. config/test.db.js enables `PRAGMA foreign_keys = ON` to mirror
+    // production, so deleting a parent (users) before its children makes SQLite reject the
+    // teardown with SQLITE_FOREIGNKEY and every suite below it reports a bogus failure.
+    // New tables must be inserted before whatever they reference.
+    const tables = [
+        'availability',
+        'assignments',
+        'user_preferences',
+        'notification_settings',
+        'morning_summary_log',
+        'template_slots',
+        'timeslots',
+        'timeslot_configurations',
+        'timeslot_templates',
+        'users',
+    ];
 
     // Use a single transaction for faster cleanup
     await new Promise((resolve, reject) => {
