@@ -241,7 +241,9 @@ Required environment variables (see `.env.sample`):
 - `PORT` - Server port (default 3000)
 - OAuth2 variables (if Authentik integration enabled)
 - SMTP configuration for password reset emails
-- App branding variables (`APP_TITLE`, `APP_URL`)
+- App branding variable (`APP_TITLE`). Outbound links, including password-reset
+  emails, are built from `BASE_URL` — not `APP_URL`, which no code reads. Setting
+  `APP_URL` alone silently produces `undefined/reset-password/<token>` links.
 
 ### Virtual Users Feature
 
