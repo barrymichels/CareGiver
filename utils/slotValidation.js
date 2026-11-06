@@ -15,6 +15,7 @@ function validateSlots(slots) {
 
     const timeRegex = /^(1[0-2]|0?[1-9]):([0-5]\d)([ap]m)$/i;
     const seenSlots = new Set();
+    const seenOrders = new Set();
 
     for (const slot of slots) {
         if (typeof slot.day_of_week !== 'number' || slot.day_of_week < 0 || slot.day_of_week > 6) {
@@ -29,7 +30,7 @@ function validateSlots(slots) {
             return 'Slot label is required';
         }
 
-        if (typeof slot.slot_order !== 'number' || slot.slot_order < 0) {
+        if (!Number.isInteger(slot.slot_order) || slot.slot_order < 0) {
             return 'Invalid slot order';
         }
 
@@ -39,6 +40,15 @@ function validateSlots(slots) {
             return `Duplicate time slot: ${slot.time} on day ${slot.day_of_week}`;
         }
         seenSlots.add(slotKey);
+
+        // Both timeslots and template_slots are keyed UNIQUE(owner, day_of_week, slot_order), so
+        // two slots sharing an order on the same day must be rejected here. Reaching the database
+        // with them turns an obvious bad request into a UNIQUE violation and a 500.
+        const orderKey = `${slot.day_of_week}-${slot.slot_order}`;
+        if (seenOrders.has(orderKey)) {
+            return `Duplicate slot order: ${slot.slot_order} on day ${slot.day_of_week}`;
+        }
+        seenOrders.add(orderKey);
     }
 
     return null;

@@ -1,6 +1,7 @@
 const express = require('express');
 const { isAuthenticated, isAdmin } = require('../../middleware/auth');
 const TimeslotManager = require('../../utils/timeslotManager');
+const DatabaseHelper = require('../../utils/dbHelper');
 const { validateSlots } = require('../../utils/slotValidation');
 
 module.exports = function (db) {
@@ -8,6 +9,7 @@ module.exports = function (db) {
     // so a second caller would silently receive the first caller's routes and database.
     const router = express.Router();
     const timeslotManager = new TimeslotManager(db);
+    const dbHelper = new DatabaseHelper(db);
 
     /**
      * GET /admin/timeslot-templates - List all templates
@@ -123,38 +125,28 @@ module.exports = function (db) {
                 return res.status(400).json({ error: validationError });
             }
 
-            // Update template
-            await new Promise((resolve, reject) => {
-                db.run(`
+            // Name, description and slots swap over together or not at all. Half-applied, the
+            // template is left with zero or partial slots, and every later applyTemplate on it
+            // fails with "Template has no slots defined".
+            await dbHelper.withTransaction(async () => {
+                // Update template
+                await dbHelper.runWithRetry(`
                     UPDATE timeslot_templates 
                     SET name = ?, description = ?
                     WHERE id = ?
-                `, [name.trim(), description ? description.trim() : '', templateId], (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
+                `, [name.trim(), description ? description.trim() : '', templateId]);
 
-            // Delete existing slots
-            await new Promise((resolve, reject) => {
-                db.run('DELETE FROM template_slots WHERE template_id = ?', [templateId], (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
+                // Delete existing slots
+                await dbHelper.runWithRetry('DELETE FROM template_slots WHERE template_id = ?', [templateId]);
 
-            // Insert new slots
-            for (const slot of slots) {
-                await new Promise((resolve, reject) => {
-                    db.run(`
+                // Insert new slots
+                for (const slot of slots) {
+                    await dbHelper.runWithRetry(`
                         INSERT INTO template_slots (template_id, day_of_week, time, label, slot_order)
                         VALUES (?, ?, ?, ?, ?)
-                    `, [templateId, slot.day_of_week, slot.time, slot.label, slot.slot_order], (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
-            }
+                    `, [templateId, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
+                }
+            });
 
             // Editing a template can also promote it to the default. Only promotion
             // is honoured: quietly unsetting the only default would leave future

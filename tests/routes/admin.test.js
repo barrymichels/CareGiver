@@ -553,6 +553,36 @@ describe('Admin Routes', () => {
             expect(user.is_active).toBe(1);
         });
 
+        it('should prevent reactivating own account', async () => {
+            // GIVEN an admin who has been deactivated but whose session is still alive (mockAuth
+            // still hands them req.user, which is exactly what the route has to work from),
+            await new Promise((resolve, reject) => {
+                testDb.run('UPDATE users SET is_active = 0 WHERE id = ?', [adminUser.id], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // WHEN they write is_active back onto their own id,
+            const response = await request(app)
+                .put(`/admin/users/${adminUser.id}`)
+                .send({ is_active: true })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'Cannot change the active status of your own account');
+
+            // THEN they are still deactivated - the write never happened.
+            const user = await new Promise((resolve) => {
+                testDb.get(
+                    'SELECT is_active FROM users WHERE id = ?',
+                    [adminUser.id],
+                    (err, row) => resolve(row)
+                );
+            });
+
+            expect(user.is_active).toBe(0);
+        });
+
         it('should prevent removing own admin status', async () => {
             const response = await request(app)
                 .put(`/admin/users/${adminUser.id}`)

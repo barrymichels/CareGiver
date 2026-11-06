@@ -118,39 +118,29 @@ module.exports = function (db) {
     });
 
     // Update assignments
-    router.post('/assign', isAdmin, async (req, res) => {
+    router.post('/assign', isAuthenticated, isAdmin, async (req, res) => {
         const { assignments } = req.body;
 
         try {
-            await new Promise((resolve, reject) => {
-                db.run('BEGIN TRANSACTION', (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
-
-            await timeslotManager.validateScheduledSlots(assignments.filter(assignment => !assignment.unassign));
-            for (const assignment of assignments) {
-                if (assignment.unassign) {
-                    // Delete the assignment if unassign flag is true
-                    await new Promise((resolve, reject) => {
-                        db.run(
+            // withTransaction owns BEGIN/COMMIT/ROLLBACK: the driver is a single shared
+            // connection, so a hand-rolled transaction that rolls back unconditionally on error
+            // would throw away whichever other request happened to be mid-transaction.
+            await dbHelper.withTransaction(async () => {
+                await timeslotManager.validateScheduledSlots(assignments.filter(assignment => !assignment.unassign));
+                for (const assignment of assignments) {
+                    if (assignment.unassign) {
+                        // Delete the assignment if unassign flag is true
+                        await dbHelper.runWithRetry(
                             `DELETE FROM assignments 
                              WHERE day_date = ? AND time_slot = ?`,
                             [
                                 assignment.date,
                                 assignment.time
-                            ],
-                            (err) => {
-                                if (err) reject(err);
-                                resolve();
-                            }
+                            ]
                         );
-                    });
-                } else {
-                    // Insert or update assignment as before
-                    await new Promise((resolve, reject) => {
-                        db.run(
+                    } else {
+                        // Insert or update assignment as before
+                        await dbHelper.runWithRetry(
                             `INSERT INTO assignments (user_id, day_date, time_slot, assigned_by)
                              VALUES (?, ?, ?, ?)
                              ON CONFLICT(day_date, time_slot)
@@ -162,28 +152,14 @@ module.exports = function (db) {
                                 req.user.id,
                                 assignment.userId,
                                 req.user.id
-                            ],
-                            (err) => {
-                                if (err) reject(err);
-                                resolve();
-                            }
+                            ]
                         );
-                    });
+                    }
                 }
-            }
-
-            await new Promise((resolve, reject) => {
-                db.run('COMMIT', (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
             });
 
             res.json({ message: 'Assignments updated successfully' });
         } catch (error) {
-            await new Promise((resolve) => {
-                db.run('ROLLBACK', () => resolve());
-            });
             res.status(error.status || 500).json({ error: error.status ? error.message : 'Server error' });
         }
     });
@@ -199,9 +175,15 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Invalid update parameters' });
             }
 
-            // Don't allow deactivating yourself
-            if (typeof is_active === 'boolean' && !is_active && parseInt(id) === req.user.id) {
-                return res.status(400).json({ error: 'Cannot deactivate your own account' });
+            // Refuse any write to your own activation state, in either direction. Deactivating
+            // yourself locks you out, and the reverse is a way back in: a deactivated admin whose
+            // session is still alive could otherwise send {"is_active": true} on their own id and
+            // restore themselves.
+            if (typeof is_active === 'boolean' && parseInt(id) === req.user.id) {
+                const error = is_active
+                    ? 'Cannot change the active status of your own account'
+                    : 'Cannot deactivate your own account';
+                return res.status(400).json({ error });
             }
 
             // Don't allow removing your own admin status

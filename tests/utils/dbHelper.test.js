@@ -219,6 +219,49 @@ describe('DatabaseHelper', () => {
         });
     });
 
+    describe('withTransaction', () => {
+        const insertValue = (value) => dbHelper.runWithRetry(
+            'INSERT INTO transaction_test (value) VALUES (?)',
+            [value],
+            TEST_CONFIG.maxRetries,
+            TEST_CONFIG.delay
+        );
+
+        const values = () => new Promise((resolve, reject) => {
+            testDb.all('SELECT value FROM transaction_test', (err, rows) => {
+                if (err) reject(err);
+                resolve((rows || []).map(row => row.value).sort());
+            });
+        });
+
+        it('should keep a committed transaction when a concurrent one fails', async () => {
+            const failing = dbHelper.withTransaction(async () => {
+                await insertValue('rolled-back');
+                // Let the other call interleave while this transaction is still open.
+                await new Promise(resolve => setTimeout(resolve, 30));
+                throw new Error('A business failure');
+            });
+
+            const succeeding = dbHelper.withTransaction(() => insertValue('committed'));
+
+            const settled = await Promise.allSettled([failing, succeeding]);
+
+            // The failing caller gets its own error back...
+            expect(settled[0].status).toBe('rejected');
+            expect(settled[0].reason.message).toBe('A business failure');
+            // ...and the other caller is told the truth: it really did save.
+            expect(settled[1].status).toBe('fulfilled');
+
+            expect(await values()).toEqual(['committed']);
+        });
+
+        it('should commit every transaction when several start at once', async () => {
+            await Promise.all([1, 2, 3].map(i => dbHelper.withTransaction(() => insertValue(`tx${i}`))));
+
+            expect(await values()).toEqual(['tx1', 'tx2', 'tx3']);
+        });
+    });
+
     describe('Error Handling', () => {
         it('should handle rollback errors', async () => {
             isErrorExpected = true;

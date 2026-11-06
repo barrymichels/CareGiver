@@ -285,6 +285,38 @@ describe('Admin Template Routes', () => {
 
             expect(response.body).toHaveProperty('error');
         });
+
+        it('should reject two slots sharing an order on the same day', async () => {
+            // template_slots is keyed UNIQUE(template_id, day_of_week, slot_order). Unchecked, the
+            // insert below turns this request into a constraint violation and a 500.
+            const response = await agent
+                .post('/admin/timeslot-templates')
+                .send({
+                    name: 'Clashing Orders',
+                    slots: [
+                        { day_of_week: 0, time: '9:00am', label: 'Morning', slot_order: 0 },
+                        { day_of_week: 0, time: '1:00pm', label: 'Afternoon', slot_order: 0 }
+                    ]
+                })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'Duplicate slot order: 0 on day 0');
+        });
+
+        it('should reject a slot order that is not an integer', async () => {
+            const response = await agent
+                .post('/admin/timeslot-templates')
+                .send({
+                    name: 'Fractional Orders',
+                    slots: [
+                        { day_of_week: 0, time: '9:00am', label: 'Morning', slot_order: 0 },
+                        { day_of_week: 0, time: '1:00pm', label: 'Afternoon', slot_order: 1.5 }
+                    ]
+                })
+                .expect(400);
+
+            expect(response.body).toHaveProperty('error', 'Invalid slot order');
+        });
     });
 
     describe('PUT /admin/timeslot-templates/:id', () => {
@@ -344,6 +376,85 @@ describe('Admin Template Routes', () => {
                 .expect(404);
 
             expect(response.body).toHaveProperty('error', 'Template not found');
+        });
+
+        it('should keep the previous slots when a slot insert fails part way through', async () => {
+            // GIVEN a template that already has a usable pair of slots,
+            for (const [time, label, slotOrder] of [['8:00am', 'Morning', 0], ['2:00pm', 'Afternoon', 1]]) {
+                await new Promise((resolve, reject) => {
+                    testDb.run(
+                        'INSERT INTO template_slots (template_id, day_of_week, time, label, slot_order) VALUES (?, ?, ?, ?, ?)',
+                        [templateId, 0, time, label, slotOrder],
+                        (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        }
+                    );
+                });
+            }
+
+            // WHEN a replacement of two slots dies on the second insert,
+            const originalRun = testDb.run;
+            let insertCount = 0;
+            const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            testDb.run = (sql, params, callback) => {
+                if (typeof params === 'function') {
+                    callback = params;
+                    params = [];
+                }
+                if (sql.includes('INSERT INTO template_slots')) {
+                    insertCount++;
+                    if (insertCount === 2) {
+                        callback(new Error('Database error'));
+                        return;
+                    }
+                }
+                return originalRun.call(testDb, sql, params, callback);
+            };
+
+            try {
+                await agent
+                    .put(`/admin/timeslot-templates/${templateId}`)
+                    .send({
+                        name: 'Updated Template',
+                        slots: [
+                            { day_of_week: 0, time: '9:00am', label: 'Morning', slot_order: 0 },
+                            { day_of_week: 0, time: '10:00am', label: 'Late Morning', slot_order: 1 }
+                        ]
+                    })
+                    .expect(500);
+            } finally {
+                testDb.run = originalRun;
+                consoleErrorSpy.mockRestore();
+            }
+
+            // THEN the template still holds the schedule it had before the failed request, rather
+            //     than the single half-written slot - or none at all, either of which would make
+            //     every later applyTemplate fail with "Template has no slots defined".
+            const slots = await new Promise((resolve, reject) => {
+                testDb.all(
+                    'SELECT time FROM template_slots WHERE template_id = ? ORDER BY slot_order',
+                    [templateId],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        resolve(rows);
+                    }
+                );
+            });
+            expect(slots.map(slot => slot.time)).toEqual(['8:00am', '2:00pm']);
+
+            // And the name change, which was already applied before the failure, went with them.
+            const template = await new Promise((resolve, reject) => {
+                testDb.get(
+                    'SELECT name FROM timeslot_templates WHERE id = ?',
+                    [templateId],
+                    (err, row) => {
+                        if (err) reject(err);
+                        resolve(row);
+                    }
+                );
+            });
+            expect(template.name).toBe('Update Template');
         });
     });
 
