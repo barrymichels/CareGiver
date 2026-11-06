@@ -1,4 +1,8 @@
-const CACHE_NAME = 'caregiver-v2';
+// Bumped from caregiver-v2 because that cache had already been used to store signed-in
+// HTML and /api/ responses for every household on the device. The activate handler below
+// deletes any cache not named exactly like this one, so the rename is what actually
+// evicts the leaked data from tablets that ran the old version.
+const CACHE_NAME = 'caregiver-v3';
 const STATIC_ASSETS = [
     '/manifest.json',
     '/icons/icon-192x192.png',
@@ -29,6 +33,38 @@ self.addEventListener('install', event => {
     self.skipWaiting();
 });
 
+// Everything we are willing to keep on the device. CacheStorage is shared by every
+// person who opens this app in the same browser profile - the whole point is the
+// shared family tablet - so anything beyond the unauthenticated precache below must
+// go to the network or nowhere. A cached dashboard is another household member's
+// schedule, names, and assignments.
+const isPrecachedAsset = (pathname) => STATIC_ASSETS.includes(pathname);
+
+// Telling the truth about being offline is not a failure state worth hiding: the
+// page that used to land here was someone else's.
+const OFFLINE_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline</title></head>
+<body>
+<h1>You are offline</h1>
+<p>This page shows your family's schedule, so it is only ever served by the server -
+never from this device. Reconnect and try again.</p>
+</body>
+</html>`;
+
+const offlineResponse = (isNavigation) => new Response(
+    isNavigation ? OFFLINE_HTML : 'Network unavailable. This page needs a connection.',
+    {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {
+            'Content-Type': isNavigation ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store'
+        }
+    }
+);
+
 // Fetch event handler with different strategies for different routes
 self.addEventListener('fetch', event => {
     // Skip non-GET requests and unsupported schemes
@@ -37,43 +73,23 @@ self.addEventListener('fetch', event => {
 
     const url = new URL(event.request.url);
 
-    // Network-first strategy for dynamic routes (API calls and HTML pages)
-    if (url.pathname === '/' || url.pathname.startsWith('/api/') || !STATIC_ASSETS.includes(url.pathname)) {
-        event.respondWith(
-            fetch(event.request)
-                .then(response => {
-                    // Only cache successful responses with supported schemes
-                    if (response.ok && url.protocol.startsWith('http')) {
-                        const responseClone = response.clone();
-                        caches.open(CACHE_NAME).then(cache => {
-                            cache.put(event.request, responseClone);
-                        });
-                    }
-                    return response;
-                })
-                .catch(() => {
-                    // If network fails, try to serve from cache
-                    return caches.match(event.request)
-                        .then(cachedResponse => {
-                            if (cachedResponse) {
-                                return cachedResponse;
-                            }
-                            // If no cache, serve the root page for navigation requests
-                            if (event.request.mode === 'navigate') {
-                                return caches.match('/');
-                            }
-                            return new Response('Network error', { status: 408 });
-                        });
-                })
-        );
-    }
-    // Cache-first strategy for static assets
-    else {
+    // Cache-first strategy for the precached, unauthenticated static assets
+    if (isPrecachedAsset(url.pathname)) {
         event.respondWith(
             caches.match(event.request)
                 .then(response => response || fetch(event.request))
         );
+        return;
     }
+
+    // Network-only for everything else: HTML pages, /api/, ICS exports. These
+    // responses are per-user, so they are never read from and never written to
+    // CacheStorage - not even as a best-effort offline convenience.
+    event.respondWith(
+        fetch(event.request).catch(() =>
+            offlineResponse(event.request.mode === 'navigate')
+        )
+    );
 });
 
 self.addEventListener('activate', event => {
