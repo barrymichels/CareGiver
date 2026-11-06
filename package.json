@@ -2,6 +2,9 @@
   "name": "caregiver",
   "version": "1.0.0",
   "main": "app.js",
+  "engines": {
+    "node": ">=20.17.0"
+  },
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
@@ -23,6 +26,7 @@
     "express": "^4.22.1",
     "express-rate-limit": "^7.5.1",
     "express-session": "^1.19.0",
+    "helmet": "^8.3.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^10.3.1",
     "passport": "^0.6.0",
