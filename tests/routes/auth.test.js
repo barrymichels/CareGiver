@@ -13,6 +13,27 @@ const configurePassport = require('../../config/passport');
 // Mock nodemailer
 jest.mock('nodemailer');
 
+// A store shaped like connect-sqlite3 (a `db` handle plus a table name - see the session
+// setup in app.js) so the reset route's session cleanup has something to delete from.
+class FakeSqliteSessionStore extends session.Store {
+    constructor() {
+        super();
+        this.rows = [];
+        this.table = 'sessions';
+        this.db = {
+            all: jest.fn((sql, callback) => callback(null, this.rows)),
+            run: jest.fn((sql, params, callback) => callback(null))
+        };
+    }
+    seed(sid, userId) {
+        const sess = userId === undefined ? { cookie: {} } : { cookie: {}, passport: { user: userId } };
+        this.rows.push({ sid, sess: JSON.stringify(sess) });
+    }
+    get(sid, cb) { cb(null, null); }
+    set(sid, sess, cb) { if (cb) cb(); }
+    destroy(sid, cb) { if (cb) cb(); }
+}
+
 describe('Auth Routes', () => {
     let app;
     let testUser;
@@ -213,6 +234,70 @@ describe('Auth Routes', () => {
                 .expect(400);
 
             expect(response.body).toHaveProperty('error', 'Passwords do not match');
+        });
+
+        it('register_whenNoUsersExistYet_shouldRefuse428SoASpambotCannotPoisonSetup', async () => {
+            // GIVEN a fresh database with no accounts,
+            await clearTestDb();
+
+            // WHEN a caller tries to register before setup has run,
+            const response = await request(app)
+                .post('/register')
+                .send({
+                    firstName: 'First',
+                    lastName: 'Bot',
+                    email: 'firstbot@example.com',
+                    password: 'password123',
+                    confirmPassword: 'password123'
+                });
+
+            // THEN registration is refused: whichever row lands first would flip
+            //      checkSetupRequired() to false and lock POST /setup out with
+            //      "Setup already completed" forever - leaving the instance with no
+            //      admin at all.
+            expect(response.status).toBe(428);
+            expect(response.body).toHaveProperty('error');
+
+            const remaining = await new Promise((resolve, reject) => {
+                testDb.get('SELECT COUNT(*) as count FROM users', (err, row) =>
+                    err ? reject(err) : resolve(row.count)
+                );
+            });
+            expect(remaining).toBe(0);
+        });
+
+        it('register_repeatedlyWithDuplicateEmails_shouldThrottleTheOracleAfterFiveProbes', async () => {
+            // GIVEN the limiter kill-switch flipped on (the suite runs it off by default)
+            //      and an address that already belongs to someone,
+            process.env.RATE_LIMITS = 'on';
+            try {
+                const throttledApp = express();
+                throttledApp.use(express.json());
+                throttledApp.use('/', require('../../routes/auth')(testDb));
+
+                // WHEN a probe hammers the endpoint with duplicate-email guesses,
+                const probe = () => request(throttledApp)
+                    .post('/register')
+                    .send({
+                        firstName: 'Probe',
+                        lastName: 'Bot',
+                        email: testUser.email,
+                        password: 'password123',
+                        confirmPassword: 'password123'
+                    });
+
+                const statuses = [];
+                for (let attempt = 0; attempt < 6; attempt++) {
+                    statuses.push((await probe()).status);
+                }
+
+                // THEN "Email already registered" stays answerable for a human - masking it
+                //      would make real signups fail silently - but the oracle is priced at
+                //      five probes an hour per address before 429 closes the door.
+                expect(statuses).toEqual([400, 400, 400, 400, 400, 429]);
+            } finally {
+                delete process.env.RATE_LIMITS;
+            }
         });
     });
 
@@ -451,31 +536,50 @@ describe('Auth Routes', () => {
     });
 
     describe('GET /reset-password/:token', () => {
-        it('should handle database error', async () => {
+        // The mock engine reports which view was rendered and echoes the two locals the
+        // error page actually consumes (message and action) - see views/reset-password-error.ejs.
+        const buildResetErrorApp = (mockDb) => {
+            const mockApp = express();
+            mockApp.use(express.json());
+            mockApp.use(session({
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+            mockApp.set('view engine', 'ejs');
+            mockApp.set('views', path.join(__dirname, '../../views'));
+            mockApp.engine('ejs', (viewPath, data, cb) => {
+                cb(null, JSON.stringify({
+                    view: viewPath.split('/').pop(),
+                    message: data.message,
+                    action: data.action
+                }));
+            });
+            mockApp.use('/', require('../../routes/auth')(mockDb));
+            return mockApp;
+        };
+
+        it('should render the error page for an invalid or expired token', async () => {
+            // GIVEN a token lookup that finds nobody (no row, or a row past its expiry),
             const mockDb = {
                 get: (query, params, callback) => {
                     if (query.includes('reset_token')) {
-                        callback(null, null); // Return null to simulate no user found
+                        callback(null, null);
                     } else {
                         callback(null, {});
                     }
                 }
             };
+            const mockApp = buildResetErrorApp(mockDb);
 
-            const mockApp = express();
-            mockApp.use(express.json());
-            mockApp.set('view engine', 'ejs');
-            mockApp.set('views', path.join(__dirname, '../../views'));
-            mockApp.engine('ejs', (path, data, cb) => {
-                cb(null, JSON.stringify({ view: path.split('/').pop(), ...data }));
-            });
-
-            const authRoutes = require('../../routes/auth')(mockDb);
-            mockApp.use('/', authRoutes);
-
+            // WHEN an expired link is opened by a real browser,
             const response = await request(mockApp)
                 .get('/reset-password/any-token');
 
+            // THEN the user is refused 400 and given the human error page - not raw JSON
+            //      naming an internal template, which is what the "For test purposes"
+            //      shortcut used to hand back to every clicking human.
+            expect(response.status).toBe(400);
             const rendered = JSON.parse(response.text);
             expect(rendered.view).toBe('reset-password-error.ejs');
             expect(rendered.message).toBe('Password reset link is invalid or has expired.');
@@ -496,26 +600,18 @@ describe('Auth Routes', () => {
                     }
                 }
             };
-
-            const mockApp = express();
-            mockApp.use(express.json());
-            mockApp.set('view engine', 'ejs');
-            mockApp.set('views', path.join(__dirname, '../../views'));
-            mockApp.engine('ejs', (path, data, cb) => {
-                cb(null, JSON.stringify({ view: path.split('/').pop(), ...data }));
-            });
-
-            const authRoutes = require('../../routes/auth')(mockDb);
-            mockApp.use('/', authRoutes);
+            const mockApp = buildResetErrorApp(mockDb);
 
             // WHEN the reset link is opened,
             const response = await request(mockApp)
                 .get('/reset-password/any-token');
 
-            // THEN the caller is told processing failed, not that the link expired.
+            // THEN the caller is told processing failed, not that the link expired. The
+            // fault gets a 500 so server-side monitoring can see it.
             // This branch never ran while the shared router swallowed mockDb and the
             // real fixture answered instead, which is why the assertion below used to
             // demand the expired-link wording and still pass.
+            expect(response.status).toBe(500);
             const rendered = JSON.parse(response.text);
             expect(rendered.view).toBe('reset-password-error.ejs');
             expect(rendered.message).toBe('An error occurred while processing your request.');
@@ -546,6 +642,53 @@ describe('Auth Routes', () => {
 
             expect(response.status).toBe(400);
             expect(response.body).toHaveProperty('error', 'Password reset link is invalid or has expired');
+        });
+
+        it('resetPassword_withAValidToken_shouldDeleteTheUsersStoredSessions', async () => {
+            // GIVEN a live reset token and a session store holding two sessions that
+            //      belong to this user - one of them the cookie the thief is still
+            //      riding on - plus another account's session and an anonymous one,
+            await new Promise((resolve, reject) => {
+                testDb.run(
+                    'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+                    ['fresh-token', Date.now() + 3600000, testUser.id],
+                    (err) => err ? reject(err) : resolve()
+                );
+            });
+
+            const store = new FakeSqliteSessionStore();
+            store.seed('victim-session-a', testUser.id);
+            store.seed('victim-session-b', testUser.id);
+            store.seed('foreign-session', 999);
+            store.seed('anonymous-session');
+
+            const resetApp = express();
+            resetApp.use(express.json());
+            resetApp.use(session({
+                store,
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+            resetApp.use('/', require('../../routes/auth')(testDb));
+
+            // WHEN the password is reset through the emailed link,
+            const response = await request(resetApp)
+                .post('/reset-password/fresh-token')
+                .send({
+                    password: 'newpassword123',
+                    confirmPassword: 'newpassword123'
+                })
+                .expect(200);
+
+            expect(response.body).toHaveProperty('message');
+
+            // THEN every session belonging to the account is destroyed. Changing the
+            //      password must evict whoever is already logged in with the old one;
+            //      before this, the stolen cookie survived the reset untouched.
+            expect(store.db.run).toHaveBeenCalledTimes(1);
+            const [, deletedSids] = store.db.run.mock.calls[0];
+            expect(deletedSids.sort()).toEqual(['victim-session-a', 'victim-session-b']);
         });
     });
 });

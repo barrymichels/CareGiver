@@ -5,7 +5,30 @@ const passport = require('passport');
 const path = require('path');
 const { testDb, initializeTestDb } = require('../../config/test.db');
 const { createTestUser, clearTestDb, getUserById } = require('../helpers/testHelpers');
+const configurePassport = require('../../config/passport');
 const bcrypt = require('bcrypt');
+
+// A store shaped like connect-sqlite3 (a `db` handle plus a table name - see the session
+// setup in app.js) so the route's session cleanup has something to delete from. Reads and
+// writes are recorded on jest.fn(), so no real sessions database is involved.
+class FakeSqliteSessionStore extends session.Store {
+    constructor() {
+        super();
+        this.rows = [];
+        this.table = 'sessions';
+        this.db = {
+            all: jest.fn((sql, callback) => callback(null, this.rows)),
+            run: jest.fn((sql, params, callback) => callback(null))
+        };
+    }
+    seed(sid, userId) {
+        const sess = userId === undefined ? { cookie: {} } : { cookie: {}, passport: { user: userId } };
+        this.rows.push({ sid, sess: JSON.stringify(sess) });
+    }
+    get(sid, cb) { cb(null, null); }
+    set(sid, sess, cb) { if (cb) cb(); }
+    destroy(sid, cb) { if (cb) cb(); }
+}
 
 // Create express app for testing
 const app = express();
@@ -204,6 +227,71 @@ describe('Profile Routes', () => {
             expect(response.status).toBe(400);
             expect(response.body).toHaveProperty('error', 'Email already in use');
         });
+
+        it('putProfile_withAPaddedAndCasedAddress_shouldStoreTheNormalisedAddressAndKeepLoginWorking', async () => {
+            // GIVEN a profile save typed as "  Bob@Example.COM ",
+            await request(app)
+                .put('/profile')
+                .send({ firstName: 'Bob', lastName: 'Smith', email: '  Bob@Example.COM ' })
+                .expect(200);
+
+            // THEN the stored address is the normalised one, exactly as registration
+            //      and password reset already store it,
+            const updatedUser = await getUserById(testUser.id);
+            expect(updatedUser.email).toBe('bob@example.com');
+
+            // AND the account can still log in. This is the whole point: the login
+            //      strategy normalises before its lookup, so a raw-cased stored row is
+            //      unreachable by its owner - a silent permanent lockout, since the
+            //      masked reset route cannot deliver mail to an address it never finds.
+            configurePassport(passport, testDb);
+            const loginApp = express();
+            loginApp.use(express.json());
+            loginApp.use(session({ secret: 'test-secret', resave: false, saveUninitialized: false }));
+            loginApp.use(passport.initialize());
+            loginApp.use(passport.session());
+            loginApp.post('/login', passport.authenticate('local'), (req, res) => {
+                res.json({ redirect: '/' });
+            });
+
+            const login = await request(loginApp)
+                .post('/login')
+                .send({ email: 'bob@example.com', password: 'password123' })
+                .expect(200);
+
+            expect(login.body).toEqual({ redirect: '/' });
+        });
+
+        it('putProfile_withACaseVariantOfAnotherUsersAddress_shouldReject400NotSurfaceAUniqueViolation', async () => {
+            // GIVEN another account already owns "other@example.com",
+            await createTestUser({ email: 'other@example.com' });
+
+            // WHEN this profile tries to save the same address with capitals,
+            const response = await request(app)
+                .put('/profile')
+                .send({ firstName: 'Updated', lastName: 'Name', email: 'Other@Example.COM' });
+
+            // THEN the duplicate check compares normalised to normalised and answers 400.
+            //      Before the fix the raw form dodged the check and the UPDATE hit the
+            //      UNIQUE constraint instead - a bare 500.
+            expect(response.status).toBe(400);
+            expect(response.body).toHaveProperty('error', 'Email already in use');
+        });
+
+        it.each([
+            ['missing names', { email: 'names@example.com' }],
+            ['blank names', { firstName: '   ', lastName: '', email: 'names@example.com' }]
+        ])('putProfile_with%s_shouldReject400InsteadOfFailingInTheUpdate', async (label, updates) => {
+            // GIVEN a profile save whose name fields are absent or blank - the payload
+            //      that used to sail past validation and 500 on the UPDATE,
+            const response = await request(app)
+                .put('/profile')
+                .send(updates);
+
+            // THEN it is refused up front.
+            expect(response.status).toBe(400);
+            expect(response.body).toHaveProperty('error', 'First and last name are required');
+        });
     });
 
     describe('PUT /profile/password', () => {
@@ -351,6 +439,50 @@ describe('Profile Routes', () => {
 
             // Restore original function
             testDb.run = originalRun;
+        });
+
+        it('putPassword_shouldDeleteTheUsersStoredSessions', async () => {
+            // GIVEN a session store holding two of this user's live sessions plus
+            //      someone else's and one belonging to an anonymous visitor,
+            const store = new FakeSqliteSessionStore();
+            store.seed('session-a', testUser.id);
+            store.seed('session-b', testUser.id);
+            store.seed('foreign-session', 999);
+            store.seed('anonymous-session');
+
+            const passwordApp = express();
+            passwordApp.use(express.json());
+            passwordApp.use(session({
+                store,
+                secret: 'test-secret',
+                resave: false,
+                saveUninitialized: false
+            }));
+            passwordApp.use((req, res, next) => {
+                req.isAuthenticated = () => true;
+                req.user = { id: testUser.id, is_active: true };
+                next();
+            });
+            passwordApp.use('/profile', profileRoutes);
+
+            // WHEN the user changes their password,
+            const response = await request(passwordApp)
+                .put('/profile/password')
+                .send({
+                    currentPassword: 'password123',
+                    newPassword: 'newpassword123',
+                    confirmPassword: 'newpassword123'
+                })
+                .expect(200);
+
+            expect(response.body).toHaveProperty('message', 'Password updated successfully');
+
+            // THEN every session that belongs to this user is destroyed. A stolen cookie
+            //      must stop working the moment its owner rotates the password; before
+            //      this, it outlived the reset untouched.
+            expect(store.db.run).toHaveBeenCalledTimes(1);
+            const [, deletedSids] = store.db.run.mock.calls[0];
+            expect(deletedSids.sort()).toEqual(['session-a', 'session-b']);
         });
     });
 }); 

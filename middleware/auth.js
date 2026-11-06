@@ -23,7 +23,10 @@ function isActive(req, res, next) {
 }
 
 const isAdmin = (req, res, next) => {
-    if (req.user && req.user.is_admin) {
+    // is_active belongs in this check, not just is_admin: not one of the /admin* routes
+    // stacks isActive, so an admin gate that trusts is_admin alone would hand a full
+    // admin session to an account every other page correctly refuses.
+    if (req.user && req.user.is_admin && req.user.is_active) {
         next();
     } else {
         // Never include req.user here: it is a full `SELECT *` row and would

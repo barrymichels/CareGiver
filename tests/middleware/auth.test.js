@@ -105,8 +105,10 @@ describe('Auth Middleware', () => {
     });
 
     describe('isAdmin', () => {
-        it('should call next() if user is admin', () => {
-            mockReq.user = { is_admin: true };
+        it('should call next() if user is an active admin', () => {
+            // is_active belongs in the fixture: an admin who has been deactivated must
+            // not pass, so the middleware's contract is admin AND active.
+            mockReq.user = { is_admin: true, is_active: true };
             
             isAdmin(mockReq, mockRes, nextFunction);
             
@@ -115,7 +117,7 @@ describe('Auth Middleware', () => {
         });
 
         it('should return error if user is not admin', () => {
-            mockReq.user = { is_admin: false };
+            mockReq.user = { is_admin: false, is_active: true };
             
             isAdmin(mockReq, mockRes, nextFunction);
             
@@ -134,10 +136,24 @@ describe('Auth Middleware', () => {
             isAdmin(mockReq, mockRes, nextFunction);
             
             expect(mockRes.status).toHaveBeenCalledWith(403);
-            expect(mockRes.json).toHaveBeenCalledWith({ 
-                error: 'Admin access required',
-                user: undefined 
-            });
+            // toEqual ignores undefined-valued keys, so asserting `{ error, user: undefined }`
+            // would pass even if a `user` key holding the full row were echoed back.
+            // Assert the body's exact key set instead.
+            expect(Object.keys(mockRes.json.mock.calls[0][0])).toEqual(['error']);
+            expect(nextFunction).not.toHaveBeenCalled();
+        });
+
+        it('should return error if user is an admin but deactivated', () => {
+            // The scenario this guard exists for: isAdmin used to be the only admin gate
+            // on the /admin* routes and checked is_admin alone, so a deactivated admin -
+            // bounced by isActive everywhere else - kept full admin access wherever
+            // isActive was forgotten (which was all 26 /admin* routes).
+            mockReq.user = { is_admin: 1, is_active: 0 };
+
+            isAdmin(mockReq, mockRes, nextFunction);
+
+            expect(mockRes.status).toHaveBeenCalledWith(403);
+            expect(mockRes.json).toHaveBeenCalledWith({ error: 'Admin access required' });
             expect(nextFunction).not.toHaveBeenCalled();
         });
     });
