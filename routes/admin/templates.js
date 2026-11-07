@@ -1,7 +1,6 @@
 const express = require('express');
 const { isAuthenticated, isAdmin } = require('../../middleware/auth');
 const TimeslotManager = require('../../utils/timeslotManager');
-const DatabaseHelper = require('../../utils/dbHelper');
 const { validateSlots } = require('../../utils/slotValidation');
 
 module.exports = function (db) {
@@ -9,7 +8,6 @@ module.exports = function (db) {
     // so a second caller would silently receive the first caller's routes and database.
     const router = express.Router();
     const timeslotManager = new TimeslotManager(db);
-    const dbHelper = new DatabaseHelper(db);
 
     /**
      * GET /admin/timeslot-templates - List all templates
@@ -87,64 +85,13 @@ module.exports = function (db) {
     router.put('/:id', isAuthenticated, isAdmin, async (req, res) => {
         try {
             const templateId = parseInt(req.params.id);
-            const { name, description, slots, isDefault } = req.body;
-            
-            // Check if template exists FIRST
-            const existingTemplate = await new Promise((resolve, reject) => {
-                db.get(
-                    'SELECT * FROM timeslot_templates WHERE id = ?', 
-                    [templateId],
-                    (err, row) => {
-                        if (err) reject(err);
-                        resolve(row);
-                    }
-                );
-            });
-            
-            if (!existingTemplate) {
-                return res.status(404).json({ error: 'Template not found' });
-            }
-            
-            if (!name || typeof name !== 'string' || name.trim().length === 0) {
-                return res.status(400).json({ error: 'Template name is required' });
-            }
-
-            if (!slots || !Array.isArray(slots) || slots.length === 0) {
-                return res.status(400).json({ error: 'Template slots are required' });
-            }
-
-            // Validate slots
-            const validationError = validateSlots(slots);
-            if (validationError) {
-                return res.status(400).json({ error: validationError });
-            }
-
-            // Name, description and slots swap over together or not at all. Half-applied, the
-            // template is left with zero or partial slots, and every later applyTemplate on it
-            // fails with "Template has no slots defined".
-            const impact = await dbHelper.withTransaction(async () => {
-                // Update template
-                await dbHelper.runWithRetry(`
-                    UPDATE timeslot_templates 
-                    SET name = ?, description = ?
-                    WHERE id = ?
-                `, [name.trim(), description ? description.trim() : '', templateId]);
-
-                // Delete existing slots
-                await dbHelper.runWithRetry('DELETE FROM template_slots WHERE template_id = ?', [templateId]);
-
-                // Insert new slots
-                for (const slot of slots) {
-                    await dbHelper.runWithRetry(`
-                        INSERT INTO template_slots (template_id, day_of_week, time, label, slot_order)
-                        VALUES (?, ?, ?, ?, ?)
-                    `, [templateId, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
-                }
-                return isDefault ? timeslotManager.setDefaultWithinTransaction(templateId) : {};
-            });
+            const impact = await timeslotManager.updateTemplate(templateId, req.body);
 
             res.json({ message: 'Template updated successfully', ...impact });
         } catch (error) {
+            if (error.status === 400 || error.status === 404) {
+                return res.status(error.status).json({ error: error.message });
+            }
             console.error('Error updating template:', error);
             res.status(500).json({ error: 'Failed to update template' });
         }

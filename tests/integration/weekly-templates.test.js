@@ -191,6 +191,30 @@ describe('Weekly schedule templates', () => {
         }
     });
 
+    it('rolls back template edits, promotion and every week when refreshing a later week fails', async () => {
+        await makeTemplate('Old default', [slot('8:00am')], true);
+        const replacement = await makeTemplate('Original name', [slot('10:00am')]);
+        const originalTemplate = await manager.getTemplateWithSlots(replacement.id);
+        const originalDefault = await manager.getDefaultTemplate();
+        const current = await manager.getTimeslotsForWeek(currentWeek);
+        const next = await manager.getTimeslotsForWeek(nextWeek);
+        await helper.runWithRetry(`CREATE TRIGGER fail_edit_refresh BEFORE INSERT ON timeslots
+            WHEN NEW.config_id = ${next.config.id} AND NEW.time = '9:00am'
+            BEGIN SELECT RAISE(ABORT, 'injected edit refresh failure'); END`);
+        try {
+            await expect(manager.updateTemplate(replacement.id, {
+                name: 'Edited name', description: 'Edited description',
+                slots: [slot('9:00am')], isDefault: true
+            })).rejects.toThrow('injected edit refresh failure');
+            expect(await manager.getTemplateWithSlots(replacement.id)).toEqual(originalTemplate);
+            expect(await manager.getDefaultTemplate()).toEqual(originalDefault);
+            expect(await manager.getTimeslotsForWeek(currentWeek)).toEqual(current);
+            expect(await manager.getTimeslotsForWeek(nextWeek)).toEqual(next);
+        } finally {
+            await helper.runWithRetry('DROP TRIGGER fail_edit_refresh');
+        }
+    });
+
     it('opens the template library without creating or changing any week', async () => {
         await makeTemplate('Library routine', [slot('9:00am')], true);
         const page = await request(app).get('/admin/timeslots?weekOffset=8').expect(200);

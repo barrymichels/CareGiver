@@ -378,6 +378,22 @@ describe('Admin Template Routes', () => {
             expect(response.body).toHaveProperty('error', 'Template not found');
         });
 
+        it('reports a missing template before validating edit input', async () => {
+            const response = await agent.put('/admin/timeslot-templates/99999')
+                .send({}).expect(404);
+            expect(response.body).toEqual({ error: 'Template not found' });
+        });
+
+        it.each([
+            [{}, 'Template name is required'],
+            [{ name: 'Edited' }, 'Template slots are required'],
+            [{ name: 'Edited', slots: [{ day_of_week: 7 }] }, 'Invalid day of week']
+        ])('preserves edit validation responses for %j', async (input, message) => {
+            const response = await agent.put(`/admin/timeslot-templates/${templateId}`)
+                .send(input).expect(400);
+            expect(response.body).toEqual({ error: message });
+        });
+
         it('should keep the previous slots when a slot insert fails part way through', async () => {
             // GIVEN a template that already has a usable pair of slots,
             for (const [time, label, slotOrder] of [['8:00am', 'Morning', 0], ['2:00pm', 'Afternoon', 1]]) {

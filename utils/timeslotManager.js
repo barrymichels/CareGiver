@@ -1,4 +1,5 @@
 const DatabaseHelper = require('./dbHelper');
+const { validateSlots } = require('./slotValidation');
 
 /**
  * TimeslotManager - Handles all timeslot configuration operations
@@ -366,11 +367,11 @@ class TimeslotManager {
 
     /** Change the default and refresh empty current/future weeks atomically. */
     async setDefaultTemplate(templateId) {
-        return this.dbHelper.withTransaction(() => this.setDefaultWithinTransaction(templateId));
+        return this.dbHelper.withTransaction(() => this.#setDefaultWithinTransaction(templateId));
     }
 
     // Call only within a transaction. Creation and deletion of a default share this policy.
-    async setDefaultWithinTransaction(templateId) {
+    async #setDefaultWithinTransaction(templateId) {
         const { template, slots: grouped } = await this.getTemplateWithSlots(templateId);
         const slots = Object.values(grouped).flat();
         if (!slots.length) throw new Error('Template has no slots defined');
@@ -436,7 +437,7 @@ class TimeslotManager {
                 `, [templateId, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
             }
             
-            const impact = isDefault ? await this.setDefaultWithinTransaction(templateId) : {};
+            const impact = isDefault ? await this.#setDefaultWithinTransaction(templateId) : {};
             return {
                 ...impact,
                 id: templateId,
@@ -446,6 +447,41 @@ class TimeslotManager {
                 is_default: isDefault,
                 created_at: new Date().toISOString()
             };
+        });
+    }
+
+    /** Edit a template and optionally refresh the default's empty weeks atomically. */
+    async updateTemplate(templateId, { name, description, slots, isDefault }) {
+        return this.dbHelper.withTransaction(async () => {
+            const existing = await this.dbHelper.getWithRetry(
+                'SELECT id FROM timeslot_templates WHERE id = ?', [templateId]
+            );
+            // Preserve missing-template precedence over invalid input.
+            if (!existing) {
+                throw Object.assign(new Error('Template not found'), { status: 404 });
+            }
+            if (!name || typeof name !== 'string' || name.trim().length === 0) {
+                throw Object.assign(new Error('Template name is required'), { status: 400 });
+            }
+            if (!slots || !Array.isArray(slots) || slots.length === 0) {
+                throw Object.assign(new Error('Template slots are required'), { status: 400 });
+            }
+            const validationError = validateSlots(slots);
+            if (validationError) {
+                throw Object.assign(new Error(validationError), { status: 400 });
+            }
+
+            await this.dbHelper.runWithRetry(`
+                UPDATE timeslot_templates SET name = ?, description = ? WHERE id = ?
+            `, [name.trim(), description ? description.trim() : '', templateId]);
+            await this.dbHelper.runWithRetry('DELETE FROM template_slots WHERE template_id = ?', [templateId]);
+            for (const slot of slots) {
+                await this.dbHelper.runWithRetry(`
+                    INSERT INTO template_slots (template_id, day_of_week, time, label, slot_order)
+                    VALUES (?, ?, ?, ?, ?)
+                `, [templateId, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
+            }
+            return isDefault ? this.#setDefaultWithinTransaction(templateId) : {};
         });
     }
 
@@ -506,7 +542,7 @@ class TimeslotManager {
                 const replacement = await this.dbHelper.getWithRetry(
                     'SELECT id FROM timeslot_templates WHERE id = ?', [replacementDefaultId]);
                 if (!replacement) throw new Error('Cannot delete: replacement template not found');
-                impact = await this.setDefaultWithinTransaction(replacementDefaultId);
+                impact = await this.#setDefaultWithinTransaction(replacementDefaultId);
             }
             // Foreign keys remove template slots and detach week metadata, preserving saved times.
             await this.dbHelper.runWithRetry('DELETE FROM timeslot_templates WHERE id = ?', [templateId]);
