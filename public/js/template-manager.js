@@ -184,7 +184,7 @@
     function makeDefault() {
         if (dirty()) { message('Save or discard your changes before updating the default.', true); return; }
         showDialog(draft.is_default ? `Update empty weeks from “${draft.name}”?` : `Make “${draft.name}” the default?`,
-            '<p>Current and future weeks with no saved availability or assignments will use this template, even if another template was selected before. New weeks will also use it.</p><p>Weeks with saved availability or assignments stay unchanged. Change those weeks in the admin schedule, where you can review and approve any entries that would be removed. Past weeks stay unchanged.</p>',
+            '',
             draft.is_default ? 'Update empty weeks' : 'Make default', () => perform(async () => {
                 const result = await request(`/admin/timeslot-templates/${draft.id}/set-default`, 'POST');
                 templates.forEach(template => { template.is_default = template.id === draft.id; });
