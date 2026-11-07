@@ -57,7 +57,7 @@
             <div class="row"><button data-action="discard">Discard changes</button><button class="primary" data-action="save">Save changes</button></div></div>
             <p class="muted">${escape(draft.description)}</p><div class="row template-actions">
             <button data-action="details">Edit name & description</button><button data-action="duplicate">Duplicate…</button>
-            <button data-action="default" ${!draft.id || draft.is_default ? 'disabled' : ''}>${draft.is_default ? 'Default template' : 'Make default'}</button>
+            <button data-action="default" ${!draft.id ? 'disabled' : ''}>${draft.is_default ? 'Update empty weeks' : 'Make default'}</button>
             <button class="danger" data-action="delete" ${!draft.id ? 'disabled' : ''}>Delete…</button></div></section>
             <p class="muted"><span id="draft-status"></span> · Saving updates this template only. Existing weeks stay unchanged.</p>
             <div class="timeslot-grid">${days.map((_, i) => dayEditor(i)).join('')}</div>
@@ -169,26 +169,42 @@
             message(`Saved “${draft.name}”. Existing weeks are unchanged.`);
         });
     }
+    function defaultResult(result) {
+        const refreshed = result.refreshedWeeks || [];
+        const protectedWeeks = result.protectedWeeks || [];
+        message(`Default updated. ${refreshed.length} empty week${refreshed.length === 1 ? '' : 's'} updated.` +
+            (protectedWeeks.length ? ` Weeks beginning ${protectedWeeks.join(', ')} have saved availability or assignments and were left unchanged. Review them in the admin schedule.` : ' No weeks need review.'));
+        if (protectedWeeks.length) {
+            const link = document.createElement('a');
+            link.href = '/admin';
+            link.textContent = ' Open admin schedule';
+            status.appendChild(link);
+        }
+    }
     function makeDefault() {
-        if (dirty()) { message('Save or discard your changes before making this template the default.', true); return; }
-        showDialog(`Make “${draft.name}” the default?`, '<p>New, unconfigured weeks will use this template. Existing weeks stay unchanged.</p>', 'Make default', () => perform(async () => {
-            await request(`/admin/timeslot-templates/${draft.id}/set-default`, 'POST');
-            templates.forEach(template => { template.is_default = template.id === draft.id; });
-            draft.is_default = true;
-            savedDraft = clone(draft);
-            render(); message('Default template updated. Existing weeks are unchanged.');
-        }));
+        if (dirty()) { message('Save or discard your changes before updating the default.', true); return; }
+        showDialog(draft.is_default ? `Update empty weeks from “${draft.name}”?` : `Make “${draft.name}” the default?`,
+            '<p>Current and future weeks with no saved availability or assignments will use this template, even if another template was selected before. New weeks will also use it.</p><p>Weeks with saved availability or assignments stay unchanged. Change those weeks in the admin schedule, where you can review and approve any entries that would be removed. Past weeks stay unchanged.</p>',
+            draft.is_default ? 'Update empty weeks' : 'Make default', () => perform(async () => {
+                const result = await request(`/admin/timeslot-templates/${draft.id}/set-default`, 'POST');
+                templates.forEach(template => { template.is_default = template.id === draft.id; });
+                draft.is_default = true;
+                savedDraft = clone(draft);
+                render(); defaultResult(result);
+            }));
     }
     function deleteTemplate() {
         const others = templates.filter(template => template.id !== draft.id);
         if (draft.is_default && !others.length) { message('Create another template before deleting the only default template.', true); return; }
-        showDialog(`Delete “${draft.name}”?`, `<p>This removes the template and any unsaved edits. Weeks already using it keep their saved times.</p>${draft.is_default ? `<label>Replacement default<select name="replacement">${others.map(template => `<option value="${template.id}">${escape(template.name)}</option>`).join('')}</select></label>` : ''}`, 'Delete template', form => perform(async () => {
+        showDialog(`Delete “${draft.name}”?`, `<p>This removes the template and any unsaved edits. ${draft.is_default ? 'Empty current and future weeks will adopt the replacement default. Weeks with saved availability or assignments stay unchanged.' : 'Weeks already using it keep their saved times.'}</p>${draft.is_default ? `<label>Replacement default<select name="replacement">${others.map(template => `<option value="${template.id}">${escape(template.name)}</option>`).join('')}</select></label>` : ''}`, 'Delete template', form => perform(async () => {
             const replacementDefaultId = draft.is_default ? Number(form.get('replacement')) : null;
-            await request(`/admin/timeslot-templates/${draft.id}`, 'DELETE', { replacementDefaultId });
+            const result = await request(`/admin/timeslot-templates/${draft.id}`, 'DELETE', { replacementDefaultId });
             templates = others;
             if (replacementDefaultId) templates.forEach(template => { template.is_default = template.id === replacementDefaultId; });
             draft = savedDraft = null;
-            render(); message('Template deleted. Existing weeks are unchanged.');
+            render();
+            if (replacementDefaultId) defaultResult(result);
+            else message('Template deleted. Existing weeks are unchanged.');
         }));
     }
     function copyDay(day, all) {

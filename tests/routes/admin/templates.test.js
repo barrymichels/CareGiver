@@ -542,6 +542,10 @@ describe('Admin Template Routes', () => {
                 );
             });
             templateId = result2.lastID;
+            await new Promise((resolve, reject) => testDb.run(
+                'INSERT INTO template_slots (template_id, day_of_week, time, label, slot_order) VALUES (?, 0, ?, ?, 0)',
+                [templateId, '9:00am', 'Morning'], err => err ? reject(err) : resolve()
+            ));
         });
 
         it('should set template as default', async () => {

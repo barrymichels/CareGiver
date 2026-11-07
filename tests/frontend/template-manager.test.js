@@ -7,7 +7,8 @@ function editor() {
     function node(key) {
         if (!nodes.has(key)) nodes.set(key, {
             innerHTML: '', textContent: '', open: false, handlers: {},
-            classList: { toggle() {} },
+            classList: { toggle() {} }, children: [],
+            appendChild(child) { this.children.push(child); },
             querySelector: selector => node(`${key} ${selector}`), querySelectorAll: () => [],
             addEventListener(type, handler) { this.handlers[type] = handler; },
             showModal() { this.open = true; }, close() { this.open = false; }
@@ -19,7 +20,7 @@ function editor() {
     const fetch = jest.fn(async () => ({ ok: true, json: async () => ({}) }));
     const confirm = jest.fn(() => true);
     vm.runInNewContext(fs.readFileSync('public/js/template-manager.js', 'utf8'), {
-        document: { getElementById: id => node('#' + id), querySelector: node, addEventListener() {} },
+        document: { getElementById: id => node('#' + id), querySelector: node, createElement: tag => ({ tag }), addEventListener() {} },
         window: { addEventListener() {} }, fetch, confirm,
         FormData: class { constructor(data) { this.data = data; } get(k) { return this.data[k] ?? ''; } getAll(k) { return this.data[k] || []; } }
     });
@@ -78,4 +79,16 @@ test('unsaved navigation can be cancelled and default promotion requires a clean
     app.confirm.mockReturnValue(true); app.click('discard'); app.click('default');
     await app.submit({});
     expect(app.fetch.mock.calls[0][0]).toBe('/admin/timeslot-templates/11/set-default');
+});
+
+test('default result identifies updated and protected weeks, and permits refreshing the same default', async () => {
+    const app = editor(); app.click('open', { id: '11' });
+    app.fetch.mockResolvedValue({ ok: true, json: async () => ({ refreshedWeeks: ['2026-11-02'], protectedWeeks: ['2026-11-09'] }) });
+    app.click('default'); await app.submit({});
+    expect(app.node('#template-status').textContent).toContain('1 empty week updated');
+    expect(app.node('#template-status').textContent).toContain('2026-11-09');
+    expect(app.node('#template-status').children[0].href).toBe('/admin');
+    expect(app.html()).toContain('Update empty weeks');
+    app.click('default'); await app.submit({});
+    expect(app.fetch).toHaveBeenCalledTimes(2);
 });

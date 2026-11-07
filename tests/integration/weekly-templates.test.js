@@ -83,6 +83,7 @@ describe('Weekly schedule templates', () => {
         expect(await helper.allWithRetry('SELECT * FROM assignments')).toEqual(originalAssignments);
         expect(await helper.allWithRetry('SELECT * FROM availability')).toEqual(originalAvailability);
 
+        await assign(nextKey, '9:00am');
         await request(app).put(`/admin/timeslot-templates/${alternate.id}`)
             .send({ name: 'Edited routine', slots: [slot('10:00am')] }).expect(200);
         expect((await manager.getTimeslotsForWeek(nextWeek)).timeslots[0].map(s => s.time)).toEqual(['9:00am', '3:00pm']);
@@ -95,38 +96,99 @@ describe('Weekly schedule templates', () => {
         expect(saved.config).toMatchObject({ template_id: null, template_name: 'New routine' });
         expect(saved.timeslots[0].map(s => s.time)).toEqual(['9:00am', '3:00pm']);
         await request(app).post('/admin/timeslots/apply-template')
-            .send({ weekStart: nextKey, templateId: null }).expect(200);
+            .send({ weekStart: nextKey, templateId: null, ignoreConflicts: true }).expect(200);
         expect((await manager.getTimeslotsForWeek(nextWeek)).config.uses_default).toBe(1);
         expect((await manager.getTimeslotsForWeek(nextWeek)).timeslots[0].map(s => s.time))
             .toEqual(['8:00am', '12:30pm', '5:00pm', '9:30pm']);
     });
 
-    it('preserves all configured future weeks when changing the default', async () => {
-        await makeTemplate('Standard', Object.values(manager.getFallbackTimeslots()).flat(), true);
-        const quiet = await makeTemplate('Quiet weeks', [slot('9:00am'), slot('3:00pm', 1)]);
+    it('refreshes empty current and future weeks, protecting availability, assignments and past weeks', async () => {
+        const original = await makeTemplate('Standard', Object.values(manager.getFallbackTimeslots()).flat(), true);
+        const replacement = await makeTemplate('New default', [slot('9:00am'), slot('3:00pm', 1)]);
+        await manager.getTimeslotsForWeek(currentWeek);
+        // Even an explicit selection is replaceable when nobody has entered availability or assignments.
+        await manager.applyTemplate(nextWeek, original.id, user.id);
+        const availabilityWeek = shifted(nextWeek, 7);
+        const assignmentWeek = shifted(nextWeek, 14);
+        const pastKey = key(shifted(currentWeek, -7));
+        const available = await manager.getTimeslotsForWeek(availabilityWeek);
+        const assigned = await manager.getTimeslotsForWeek(assignmentWeek);
+        await helper.runWithRetry('INSERT INTO availability (user_id, day_date, time_slot, is_available) VALUES (?, ?, ?, ?)',
+            [user.id, key(availabilityWeek), '8:00am', 0]);
+        await helper.runWithRetry('INSERT INTO assignments (user_id, day_date, time_slot, assigned_by) VALUES (?, ?, ?, ?)',
+            [user.id, key(assignmentWeek), '8:00am', user.id]);
+        await helper.runWithRetry('INSERT INTO timeslot_configurations (week_start, created_by, template_id, template_name, uses_default) VALUES (?, ?, ?, ?, 1)',
+            [pastKey, user.id, original.id, original.name]);
+        const past = await manager.getTimeslotsForWeek(shifted(currentWeek, -7));
+        const savedAvailability = await helper.allWithRetry('SELECT * FROM availability');
+        const savedAssignments = await helper.allWithRetry('SELECT * FROM assignments');
 
-        const bookedWeek = shifted(nextWeek, 7);
-        const bookedKey = key(bookedWeek);
-        const untouchedWeek = shifted(nextWeek, 14);
-        const original = await manager.getTimeslotsForWeek(nextWeek);
-        await helper.runWithRetry("INSERT INTO availability (user_id, day_date, time_slot) VALUES (?, ?, ?)", [user.id, nextKey, "8:00am"]);
-        const bookedSlot = (await manager.getTimeslotsForWeek(bookedWeek)).timeslots[0][0];
-        await assign(bookedKey, bookedSlot.time, bookedSlot.id);
+        const response = await request(app).post(`/admin/timeslot-templates/${replacement.id}/set-default`).expect(200);
+        expect(response.body.refreshedWeeks).toEqual([currentKey, nextKey]);
+        expect(response.body.protectedWeeks).toEqual([key(availabilityWeek), key(assignmentWeek)]);
+        for (const week of [currentWeek, nextWeek, shifted(nextWeek, 21)]) {
+            const saved = await manager.getTimeslotsForWeek(week);
+            expect(saved.config).toMatchObject({ template_id: replacement.id, uses_default: 1 });
+            expect(saved.timeslots[0].map(s => s.time)).toEqual(['9:00am', '3:00pm']);
+        }
+        expect(await manager.getTimeslotsForWeek(availabilityWeek)).toEqual(available);
+        expect(await manager.getTimeslotsForWeek(assignmentWeek)).toEqual(assigned);
+        expect(await manager.getTimeslotsForWeek(shifted(currentWeek, -7))).toEqual(past);
+        expect(await helper.allWithRetry('SELECT * FROM availability')).toEqual(savedAvailability);
+        expect(await helper.allWithRetry('SELECT * FROM assignments')).toEqual(savedAssignments);
 
-        const response = await request(app).post(`/admin/timeslot-templates/${quiet.id}/set-default`).expect(200);
-        expect(response.body.refreshedWeeks).toEqual([]);
+        // Every calendar reads the refreshed copies, including the current week.
+        for (const weekOffset of [0, 1]) {
+            for (const url of ['/admin', '/availability', '/']) {
+                const page = await request(app).get(url).query({ weekOffset }).expect(200);
+                const times = [...page.text.matchAll(url === '/' ? /class="time">([^<]+)</g : /data-time="([^"]+)"/g)].map(match => match[1]);
+                expect(times).toEqual(['9:00am', '3:00pm']);
+            }
+        }
+        // Protected weeks still need explicit confirmation for removed entries.
+        await request(app).post('/admin/timeslots/apply-template')
+            .send({ weekStart: key(assignmentWeek), templateId: replacement.id }).expect(409);
+        await request(app).post('/admin/timeslots/apply-template')
+            .send({ weekStart: key(assignmentWeek), templateId: replacement.id, ignoreConflicts: true }).expect(200);
+        expect(await helper.allWithRetry('SELECT * FROM assignments')).toEqual([]);
+        expect(await helper.allWithRetry('SELECT * FROM availability')).toEqual(savedAvailability);
+    });
 
-        const refreshed = await manager.getTimeslotsForWeek(nextWeek);
-        expect(refreshed).toEqual(original);
-        expect(await helper.allWithRetry('SELECT * FROM availability WHERE day_date = ?', [nextKey])).toHaveLength(1);
+    it.each(['create', 'update', 'delete'])('refreshes empty weeks when a default changes through %s', async action => {
+        const original = await makeTemplate('Old', [slot('8:00am')], true);
+        const replacement = await makeTemplate('New', [slot('9:00am')]);
+        await manager.getTimeslotsForWeek(currentWeek);
+        if (action === 'create') {
+            await request(app).post('/admin/timeslot-templates')
+                .send({ name: 'Created default', slots: [slot('9:00am')], isDefault: true }).expect(200);
+        } else if (action === 'update') {
+            await request(app).put(`/admin/timeslot-templates/${replacement.id}`)
+                .send({ name: 'Updated default', slots: [slot('9:00am')], isDefault: true }).expect(200);
+        } else {
+            await request(app).delete(`/admin/timeslot-templates/${original.id}`)
+                .send({ replacementDefaultId: replacement.id }).expect(200);
+        }
+        const week = await manager.getTimeslotsForWeek(currentWeek);
+        expect(week.config.template_id).toBe((await manager.getDefaultTemplate()).id);
+        expect(week.timeslots[0].map(s => s.time)).toEqual(['9:00am']);
+    });
 
-        expect((await manager.getTimeslotsForWeek(bookedWeek)).timeslots[0].map(s => s.time))
-            .not.toEqual(['9:00am', '3:00pm']);
-        expect(await helper.allWithRetry('SELECT * FROM assignments WHERE day_date = ?', [bookedKey])).toHaveLength(1);
-
-        // A week nobody has opened yet picks the new default up on first view.
-        expect((await manager.getTimeslotsForWeek(untouchedWeek)).timeslots[0].map(s => s.time))
-            .toEqual(['9:00am', '3:00pm']);
+    it('rolls back the default and every empty week if refreshing a week fails', async () => {
+        const original = await makeTemplate('Old', [slot('8:00am')], true);
+        const replacement = await makeTemplate('New', [slot('9:00am')]);
+        const before = await manager.getTimeslotsForWeek(currentWeek);
+        const next = await manager.getTimeslotsForWeek(nextWeek);
+        await helper.runWithRetry(`CREATE TRIGGER fail_default_refresh BEFORE INSERT ON timeslots
+            WHEN NEW.config_id = ${next.config.id} AND NEW.time = '9:00am'
+            BEGIN SELECT RAISE(ABORT, 'injected refresh failure'); END`);
+        try {
+            await request(app).post(`/admin/timeslot-templates/${replacement.id}/set-default`).expect(500);
+            expect((await manager.getDefaultTemplate()).id).toBe(original.id);
+            expect(await manager.getTimeslotsForWeek(currentWeek)).toEqual(before);
+            expect(await manager.getTimeslotsForWeek(nextWeek)).toEqual(next);
+        } finally {
+            await helper.runWithRetry('DROP TRIGGER fail_default_refresh');
+        }
     });
 
     it('opens the template library without creating or changing any week', async () => {

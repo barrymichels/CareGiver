@@ -42,12 +42,17 @@ In the **Admin Panel**, navigate to the desired Monday–Sunday week and click
 **Change template**, select a template, and **Apply to this week**. Weeks can be
 configured up to eight weeks ahead. Past weeks remain locked.
 
-Unconfigured weeks start with the current default. Each configured week saves
-its own copy: editing or deleting a template, or changing the default, never
-rewrites saved weeks, including future weeks. Reapply a template explicitly to
-update a particular week. Entries at unchanged times remain intact; when a change
-removes times with saved availability or assignments, the app lists the affected
-entries and requires confirmation before clearing them.
+Unconfigured weeks start with the current default. **Make default** also replaces
+current and future weeks that have no saved availability or assignments, even
+if another template was selected for them. **Update empty weeks** on the current
+default applies the same rule without switching defaults. Past weeks never change.
+
+Weeks with saved availability (including unavailable responses) or assignments
+stay unchanged and are listed for review. To change one, use **Change template**
+in the Admin Panel. Entries at unchanged times remain intact; the app lists any
+entries at removed times and requires approval before clearing them. Editing a
+template alone does not apply its changes to weeks. Deleting the default requires
+a replacement, which follows the same empty-week update rule.
 
 The template management design was selected through interactive prototypes.
 The reviewed alternatives are preserved on branch `prototype/template-management`

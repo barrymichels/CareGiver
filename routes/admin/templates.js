@@ -71,11 +71,6 @@ module.exports = function (db) {
                 Boolean(isDefault)
             );
 
-            if (isDefault) {
-                // Only change the default flag; configured weeks remain snapshots.
-                await timeslotManager.setDefaultTemplate(template.id, req.user.id);
-            }
-
             res.json({
                 message: 'Template created successfully',
                 data: template
@@ -127,7 +122,7 @@ module.exports = function (db) {
             // Name, description and slots swap over together or not at all. Half-applied, the
             // template is left with zero or partial slots, and every later applyTemplate on it
             // fails with "Template has no slots defined".
-            await dbHelper.withTransaction(async () => {
+            const impact = await dbHelper.withTransaction(async () => {
                 // Update template
                 await dbHelper.runWithRetry(`
                     UPDATE timeslot_templates 
@@ -145,16 +140,10 @@ module.exports = function (db) {
                         VALUES (?, ?, ?, ?, ?)
                     `, [templateId, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
                 }
+                return isDefault ? timeslotManager.setDefaultWithinTransaction(templateId) : {};
             });
 
-            // Editing a template can also promote it to the default. Only promotion
-            // is honoured: quietly unsetting the only default would leave future
-            // weeks with no schedule to fall back on.
-            if (isDefault) {
-                await timeslotManager.setDefaultTemplate(templateId, req.user.id);
-            }
-
-            res.json({ message: 'Template updated successfully' });
+            res.json({ message: 'Template updated successfully', ...impact });
         } catch (error) {
             console.error('Error updating template:', error);
             res.status(500).json({ error: 'Failed to update template' });
@@ -167,8 +156,8 @@ module.exports = function (db) {
     router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
         try {
             const templateId = parseInt(req.params.id);
-            await timeslotManager.deleteTemplate(templateId, req.body.replacementDefaultId);
-            res.json({ message: 'Template deleted successfully' });
+            const impact = await timeslotManager.deleteTemplate(templateId, req.body.replacementDefaultId);
+            res.json({ message: 'Template deleted successfully', ...impact });
         } catch (error) {
             console.error('Error deleting template:', error);
             if (error.message === 'Template not found') {
@@ -204,8 +193,8 @@ module.exports = function (db) {
                 return res.status(404).json({ error: 'Template not found' });
             }
 
-            const { refreshedWeeks } = await timeslotManager.setDefaultTemplate(templateId, req.user.id);
-            res.json({ message: 'Default template updated successfully', refreshedWeeks });
+            const impact = await timeslotManager.setDefaultTemplate(templateId);
+            res.json({ message: 'Default template updated successfully', ...impact });
         } catch (error) {
             console.error('Error setting default template:', error);
             res.status(500).json({ error: 'Failed to set default template' });
@@ -306,11 +295,6 @@ module.exports = function (db) {
                 req.user.id,
                 Boolean(isDefault)
             );
-
-            if (isDefault) {
-                // Only change the default flag; configured weeks remain snapshots.
-                await timeslotManager.setDefaultTemplate(template.id, req.user.id);
-            }
 
             res.json({
                 message: 'Template created from week successfully',

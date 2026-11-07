@@ -364,17 +364,49 @@ class TimeslotManager {
         `);
     }
 
-    /** Set the default for unconfigured weeks; saved weeks are snapshots. */
+    /** Change the default and refresh empty current/future weeks atomically. */
     async setDefaultTemplate(templateId) {
-        await this.dbHelper.withTransaction(async () => {
-            const template = await this.dbHelper.getWithRetry(
-                'SELECT id FROM timeslot_templates WHERE id = ?', [templateId]);
-            if (!template) throw new Error('Template not found');
-            await this.dbHelper.runWithRetry('UPDATE timeslot_templates SET is_default = 0');
-            await this.dbHelper.runWithRetry(
-                'UPDATE timeslot_templates SET is_default = 1 WHERE id = ?', [templateId]);
-        });
-        return { refreshedWeeks: [] };
+        return this.dbHelper.withTransaction(() => this.setDefaultWithinTransaction(templateId));
+    }
+
+    // Call only within a transaction. Creation and deletion of a default share this policy.
+    async setDefaultWithinTransaction(templateId) {
+        const { template, slots: grouped } = await this.getTemplateWithSlots(templateId);
+        const slots = Object.values(grouped).flat();
+        if (!slots.length) throw new Error('Template has no slots defined');
+        const currentWeek = this.getWeekStart(new Date()).toISOString().slice(0, 10);
+        const weeks = await this.dbHelper.allWithRetry(`
+            SELECT c.id, c.week_start,
+                (EXISTS (SELECT 1 FROM availability a
+                    WHERE a.day_date BETWEEN c.week_start AND date(c.week_start, '+6 days'))
+                 OR EXISTS (SELECT 1 FROM assignments a
+                    WHERE a.day_date BETWEEN c.week_start AND date(c.week_start, '+6 days'))) AS has_entries
+            FROM timeslot_configurations c WHERE c.week_start >= ? ORDER BY c.week_start
+        `, [currentWeek]);
+        await this.dbHelper.runWithRetry('UPDATE timeslot_templates SET is_default = 0');
+        await this.dbHelper.runWithRetry('UPDATE timeslot_templates SET is_default = 1 WHERE id = ?', [templateId]);
+        const refreshedWeeks = [], protectedWeeks = [];
+        for (const week of weeks) {
+            if (week.has_entries) {
+                protectedWeeks.push(week.week_start);
+                continue;
+            }
+            // These weeks have no availability (including unavailable responses) or assignments.
+            // Replacing their slots cannot discard anyone's saved input.
+            await this.dbHelper.runWithRetry('DELETE FROM timeslots WHERE config_id = ?', [week.id]);
+            for (const slot of slots) {
+                await this.dbHelper.runWithRetry(`
+                    INSERT INTO timeslots (config_id, day_of_week, time, label, slot_order)
+                    VALUES (?, ?, ?, ?, ?)
+                `, [week.id, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
+            }
+            await this.dbHelper.runWithRetry(`
+                UPDATE timeslot_configurations SET template_id = ?, template_name = ?,
+                    uses_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            `, [template.id, template.name, week.id]);
+            refreshedWeeks.push(week.week_start);
+        }
+        return { refreshedWeeks, protectedWeeks };
     }
 
     /**
@@ -388,18 +420,11 @@ class TimeslotManager {
      */
     async createTemplate(name, description, slots, createdBy, isDefault = false) {
         return await this.dbHelper.withTransaction(async () => {
-            // If setting as default, clear existing defaults first
-            if (isDefault) {
-                await this.dbHelper.runWithRetry(`
-                    UPDATE timeslot_templates SET is_default = 0
-                `);
-            }
-            
             // Create template
             const templateResult = await this.dbHelper.runWithRetry(`
                 INSERT INTO timeslot_templates (name, description, created_by, is_default)
                 VALUES (?, ?, ?, ?)
-            `, [name, description, createdBy, isDefault ? 1 : 0]);
+            `, [name, description, createdBy, 0]);
             
             const templateId = templateResult.lastID;
             
@@ -411,7 +436,9 @@ class TimeslotManager {
                 `, [templateId, slot.day_of_week, slot.time, slot.label, slot.slot_order]);
             }
             
+            const impact = isDefault ? await this.setDefaultWithinTransaction(templateId) : {};
             return {
+                ...impact,
                 id: templateId,
                 name,
                 description,
@@ -467,7 +494,8 @@ class TimeslotManager {
      * @returns {Promise<void>}
      */
     async deleteTemplate(templateId, replacementDefaultId = null) {
-        await this.dbHelper.withTransaction(async () => {
+        return this.dbHelper.withTransaction(async () => {
+            let impact;
             const template = await this.dbHelper.getWithRetry(
                 'SELECT * FROM timeslot_templates WHERE id = ?', [templateId]);
             if (!template) throw new Error('Template not found');
@@ -478,12 +506,11 @@ class TimeslotManager {
                 const replacement = await this.dbHelper.getWithRetry(
                     'SELECT id FROM timeslot_templates WHERE id = ?', [replacementDefaultId]);
                 if (!replacement) throw new Error('Cannot delete: replacement template not found');
-                await this.dbHelper.runWithRetry('UPDATE timeslot_templates SET is_default = 0');
-                await this.dbHelper.runWithRetry(
-                    'UPDATE timeslot_templates SET is_default = 1 WHERE id = ?', [replacementDefaultId]);
+                impact = await this.setDefaultWithinTransaction(replacementDefaultId);
             }
             // Foreign keys remove template slots and detach week metadata, preserving saved times.
             await this.dbHelper.runWithRetry('DELETE FROM timeslot_templates WHERE id = ?', [templateId]);
+            return impact;
         });
     }
 }
