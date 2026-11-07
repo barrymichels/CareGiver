@@ -3,7 +3,6 @@ const { isAuthenticated, isAdmin } = require('../../middleware/auth');
 const TimeslotManager = require('../../utils/timeslotManager');
 const { escapeJsonForEmbed } = require('../../utils/safeJson');
 const { validateSlots } = require('../../utils/slotValidation');
-const { WEEK_DAYS, weekTitleFor } = require('../../utils/weekView');
 
 module.exports = function (db) {
     // Must stay inside the factory: a module-level router is shared by every require() call,
@@ -16,35 +15,11 @@ module.exports = function (db) {
      */
     router.get('/', isAuthenticated, isAdmin, async (req, res) => {
         try {
-            const weekOffset = parseInt(req.query.weekOffset) || 0;
-            // Limit week offset to reasonable range
-            const limitedOffset = Math.max(-4, Math.min(8, weekOffset));
-
-            // Calculate target week
-            const today = new Date();
-            const targetWeekStart = timeslotManager.getWeekStart(today);
-            targetWeekStart.setDate(targetWeekStart.getDate() + (limitedOffset * 7));
-
-            // Get timeslots for the week
-            const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
-            
-            // Get all templates for the dropdown
             const templates = await timeslotManager.getAllTemplates();
-
-            // Generate week title
-            const weekTitle = weekTitleFor(limitedOffset);
-
+            const templateData = await Promise.all(templates.map(template =>
+                timeslotManager.getTemplateWithSlots(template.id)));
             res.render('admin/timeslots', {
-                user: req.user,
-                weekData,
-                templates,
-                weekOffset: limitedOffset,
-                weekTitle,
-                weekStart: targetWeekStart,
-                canModify: timeslotManager.canModifyWeek(targetWeekStart),
-                // Rendered into an inline <script> below; must not be plain JSON.stringify.
-                escapeJsonForEmbed,
-                days: WEEK_DAYS
+                user: req.user, templateData, escapeJsonForEmbed
             });
         } catch (error) {
             if (error.status) return res.status(error.status).json({ error: error.message, conflicts: error.conflicts });

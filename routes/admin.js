@@ -18,8 +18,8 @@ module.exports = function (db) {
     router.get('/', isAuthenticated, isAdmin, async (req, res) => {
         try {
             const weekOffset = parseInt(req.query.weekOffset) || 0;
-            // Limit week offset between -4 and 1
-            const limitedOffset = Math.max(-4, Math.min(1, weekOffset));
+            // Limit week offset between -4 and 8
+            const limitedOffset = Math.max(-4, Math.min(8, weekOffset));
 
             // Monday..Sunday of the target week, as local calendar strings
             const { start: targetWeekStart, sqlStart, sqlEnd } = weekWindowFor(limitedOffset);
@@ -79,6 +79,9 @@ module.exports = function (db) {
 
             const weekData = await timeslotManager.getTimeslotsForWeek(targetWeekStart);
             res.render('admin', {
+                templates: await timeslotManager.getAllTemplates(),
+                canModifyWeek: timeslotManager.canModifyWeek(targetWeekStart),
+                weekStartKey: sqlStart,
                 weekData,
                 user: req.user,
                 users,
@@ -391,7 +394,7 @@ module.exports = function (db) {
         const { id } = req.params;
         const weekOffset = parseInt(req.query.weekOffset) || 0;
         // Limit week offset to range (-4 to 1)
-        const limitedOffset = Math.max(-4, Math.min(1, weekOffset));
+        const limitedOffset = Math.max(-4, Math.min(8, weekOffset));
 
         try {
             // Get user info

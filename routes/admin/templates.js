@@ -72,8 +72,7 @@ module.exports = function (db) {
             );
 
             if (isDefault) {
-                // createTemplate flags the new default itself; this also carries
-                // the change through to weeks that were auto-filled from the old one.
+                // Only change the default flag; configured weeks remain snapshots.
                 await timeslotManager.setDefaultTemplate(template.id, req.user.id);
             }
 
@@ -168,7 +167,7 @@ module.exports = function (db) {
     router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
         try {
             const templateId = parseInt(req.params.id);
-            await timeslotManager.deleteTemplate(templateId);
+            await timeslotManager.deleteTemplate(templateId, req.body.replacementDefaultId);
             res.json({ message: 'Template deleted successfully' });
         } catch (error) {
             console.error('Error deleting template:', error);
@@ -309,8 +308,7 @@ module.exports = function (db) {
             );
 
             if (isDefault) {
-                // createTemplate flags the new default itself; this also carries
-                // the change through to weeks that were auto-filled from the old one.
+                // Only change the default flag; configured weeks remain snapshots.
                 await timeslotManager.setDefaultTemplate(template.id, req.user.id);
             }
 

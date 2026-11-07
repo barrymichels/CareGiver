@@ -27,26 +27,33 @@ It will grow and change as we use it and see how the app can be improved.
 
 ## Quick Start
 
+### Manage schedule templates
+
+Open **Schedule Templates** from the admin menu. Choose a template from the list
+and edit its daily timeslots. **Save changes** updates that same template.
+Create a template, rename it, duplicate it, make it the default, or delete it from
+this page. Each day is independent; **Copy to All Days** and **Copy to selected
+days** speed up repeated schedules. Unsaved changes stay in a draft until saved.
+Deleting the default requires choosing a replacement.
+
 ### Choose a schedule for a week
 
-In **Configure Timeslots**, navigate to the desired Monday–Sunday week, choose a
-**Schedule template for this week**, and click **Apply to this week**. You can set
-next week's template now without changing this week's schedule. The admin schedule
-also links directly to the displayed week's template settings.
+In the **Admin Panel**, navigate to the desired Monday–Sunday week and click
+**Change template**, select a template, and **Apply to this week**. Weeks can be
+configured up to eight weeks ahead. Past weeks remain locked.
 
-Unconfigured weeks start with the defined default (initially 8am, 12:30pm, 5pm,
-and 9:30pm). Each week saves its own copy, so later template edits or default
-changes do not rewrite existing weeks. **Use default** explicitly resets the
-displayed week to the current default. Past weeks remain locked.
+Unconfigured weeks start with the current default. Each configured week saves
+its own copy: editing or deleting a template, or changing the default, never
+rewrites saved weeks, including future weeks. Reapply a template explicitly to
+update a particular week. Entries at unchanged times remain intact; when a change
+removes times with saved availability or assignments, the app lists the affected
+entries and requires confirmation before clearing them.
 
-When a change removes times with saved availability or assignments, the app lists
-the affected entries before saving. Confirming clears only those entries; entries
-at unchanged times and entries in other weeks remain intact. All schedule and
-availability screens use the saved times for that day and week.
-
-The weekly-template metadata migration runs automatically at startup and preserves
-existing schedules. Existing weeks without recorded template information appear
-as **Custom / existing schedule** until a template is explicitly applied.
+The template management design was selected through interactive prototypes.
+The reviewed alternatives are preserved on branch `prototype/template-management`
+(commit `fcd6f676`); round-two B was selected: compact template list, action header,
+and the original day editor. Run `npm run prototype:templates` on that branch to
+revisit the prototypes.
 
 ### Run locally
 

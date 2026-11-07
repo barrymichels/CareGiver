@@ -823,3 +823,14 @@
         justify-self: center;
     }
 }
+
+/* Template selection belongs to the displayed admin week, not the library. */
+.template-week-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.week-template-dialog { margin:auto; width:min(580px,92vw); max-height:85vh; overflow:auto; padding:24px; border:1px solid #777; border-radius:10px; background:var(--card-bg); color:var(--text-color); }
+.week-template-dialog::backdrop { background:#000a; }
+.week-template-dialog p { margin:16px 0; line-height:1.5; }
+.week-template-dialog select { display:block; width:100%; margin:8px 0 20px; padding:10px; font:inherit; background:var(--card-bg); color:var(--text-color); }
+.week-template-dialog button { padding:10px 14px; border-radius:5px; border:1px solid #666; background:var(--primary-color); color:white; cursor:pointer; }
+.week-template-dialog button:disabled { opacity:.5; }
+#weekTemplateConflicts, #weekTemplateError { color:#ffc5a4; }
+#weekTemplateConflicts ul { margin:12px 0 12px 22px; }

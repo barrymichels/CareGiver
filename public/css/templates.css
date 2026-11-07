@@ -1,0 +1,205 @@
+body { display:block; }
+.template-manager { max-width:1200px; margin:100px auto 40px; padding:0 20px; }
+.template-manager h1 { margin:12px 0; }
+.template-manager h2 { font-size:24px; color:var(--primary-color); }
+.template-manager p { margin:12px 0; line-height:1.5; }
+.template-manager .muted { color:#bdbdc9; }
+.template-manager .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.template-manager .spread { justify-content:space-between; }
+.template-manager button, .template-dialog button { font:inherit; padding:10px 14px; border:1px solid #555563; border-radius:6px; background:#303038; color:white; cursor:pointer; }
+.template-manager button:hover, .template-dialog button:hover { filter:brightness(1.2); }
+.template-manager button:disabled { opacity:.5; cursor:default; }
+.template-manager .primary, .template-dialog .primary { background:var(--primary-color); border-color:transparent; }
+.template-manager .danger { color:#ffa5a5; }
+.template-manager .badge { display:inline-block; font-size:12px; padding:4px 8px; border-radius:20px; background:#353858; color:#d3d5ff; }
+.template-manager .panel, .editor-top { background:var(--card-bg); padding:24px; border-radius:8px; margin:20px 0; }
+.template-row { display:grid; grid-template-columns:1.5fr 2fr auto; gap:20px; align-items:center; padding:22px 0; border-bottom:1px solid #44444e; }
+.template-row:last-child { border:0; }
+.template-row h2 { font-size:20px; color:var(--text-color); }
+.template-row .summary { display:flex; gap:6px; flex-wrap:wrap; }
+.template-row .summary span { padding:6px; background:#30303a; border-radius:4px; font-size:12px; }
+.template-actions { margin-top:20px; border-top:1px solid #45454e; padding-top:16px; }
+.list-head { font-size:12px; color:#bdbdc9; text-transform:uppercase; }
+#template-status { min-height:24px; }
+#template-status.error, .dialog-error { color:#ffa5a5; }
+.template-dialog { margin:auto; width:min(480px,90vw); max-height:85vh; overflow:auto; background:var(--card-bg); color:white; border:1px solid #737386; border-radius:12px; padding:24px; }
+.template-dialog::backdrop { background:#000a; }
+.template-dialog h2, .template-dialog p { margin-bottom:16px; }
+.template-dialog p { line-height:1.5; }
+.template-dialog label { display:block; margin:14px 0; }
+.template-dialog input:not([type=checkbox]), .template-dialog select { display:block; width:100%; font:inherit; padding:10px; margin-top:6px; background:#1d1d23; color:white; border:1px solid #555560; border-radius:5px; }
+.template-dialog input[type=checkbox] { margin-right:8px; }
+.template-dialog .dialog-actions { display:flex; gap:10px; margin-top:20px; }
+.template-dialog fieldset { border:0; min-width:0; }
+.template-manager :focus-visible, .template-dialog :focus-visible { outline:2px solid #a9adff; outline-offset:3px; }
+        .timeslot-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .day-column {
+            background: var(--card-bg);
+            color: var(--text-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .day-header {
+            background: var(--primary-color);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .day-slots {
+            padding: 15px;
+        }
+
+        .timeslot-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: var(--input-bg);
+            border-radius: 4px;
+            border: 1px solid var(--input-border);
+            color: var(--text-color);
+        }
+
+        .timeslot-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .slot-info {
+            flex-grow: 1;
+        }
+
+        .slot-time {
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .slot-label {
+            font-size: 0.9em;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .slot-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-left: 8px;
+        }
+
+        .slot-actions button {
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        .edit-slot {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffd700;
+            border: 1px solid rgba(255, 215, 0, 0.3);
+        }
+
+        .edit-slot:hover {
+            background: rgba(255, 215, 0, 0.2);
+            color: #fff;
+        }
+
+        .delete-slot {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ff6b6b;
+            border: 1px solid rgba(255, 107, 107, 0.3);
+        }
+
+        .delete-slot:hover {
+            background: rgba(255, 107, 107, 0.2);
+            color: #fff;
+        }
+
+        .add-slot-btn {
+            width: 100%;
+            padding: 10px;
+            background: var(--success-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .add-slot-btn:hover {
+            background: #45a049;
+        }
+
+        .copy-day-btn {
+            width: 100%;
+            padding: 8px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
+
+        .copy-day-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .save-config-section {
+            text-align: center;
+            padding: 20px;
+            background: var(--card-bg);
+            color: var(--text-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .save-config-btn {
+            padding: 15px 30px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin-right: 15px;
+        }
+
+        .save-config-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .save-config-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+
+.template-manager .timeslot-grid { margin-top:24px; }
+.template-manager .slot-label { overflow-wrap:anywhere; }
+.template-manager .slot-time { white-space:nowrap; }
+.template-manager .slot-actions { flex-shrink:0; }
+.template-manager .add-slot-btn { background:var(--success-color); }
+.template-manager .copy-day-btn, .template-manager .save-config-btn { background:var(--primary-color); }
+.template-manager .slot-actions button { width:24px; height:24px; padding:0; font-size:12px; }
+.template-manager .copy-day-btn { font-size:12px; padding:8px; }
+@media(max-width:1100px) and (min-width:769px) { .template-manager .timeslot-grid { gap:6px; } .template-manager .day-slots { padding:6px; } .template-manager .timeslot-item { padding:6px; } .template-manager .slot-actions { margin-left:3px; } .template-manager .slot-time { font-size:13px; } }
+@media(max-width:768px) { .template-manager .timeslot-grid { grid-template-columns:1fr; } .template-row { grid-template-columns:1fr; } .list-head { display:none; } .template-manager { padding:0 14px; } .editor-top { padding:18px; } }

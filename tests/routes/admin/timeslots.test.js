@@ -119,7 +119,7 @@ describe('Admin Timeslot Routes', () => {
             expect(response.text).toBe('rendered');
         });
 
-        it('should limit week offset to reasonable range', async () => {
+        it('should ignore week navigation when rendering the template library', async () => {
             // Set up view engine to capture render data
             let renderData;
             app.set('view engine', 'ejs');
@@ -135,7 +135,8 @@ describe('Admin Timeslot Routes', () => {
                 .expect(200);
 
             expect(response.text).toBe('rendered');
-            expect(renderData.weekOffset).toBe(8); // Should be limited
+            expect(renderData.weekOffset).toBeUndefined();
+            expect(renderData.templateData).toEqual([]);
         });
     });
 

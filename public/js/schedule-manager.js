@@ -10,6 +10,78 @@ document.addEventListener('DOMContentLoaded', () => {
         const slotCounts = new Map(); // Track slot counts per user
         let isDirty = false;
 
+        // Applying a template shares the schedule's unsaved-assignment guard.
+        const templateDialog = document.getElementById('weekTemplateDialog');
+        if (templateDialog) {
+            const form = document.getElementById('weekTemplateForm');
+            const select = document.getElementById('weekTemplateSelect');
+            const apply = document.getElementById('applyWeekTemplate');
+            const cancel = document.getElementById('cancelWeekTemplate');
+            const conflicts = document.getElementById('weekTemplateConflicts');
+            const error = document.getElementById('weekTemplateError');
+            let confirmedTemplate = null, applying = false;
+            function resetPreview() {
+                confirmedTemplate = null;
+                conflicts.hidden = true;
+                conflicts.replaceChildren();
+                error.textContent = '';
+                apply.textContent = 'Apply to this week';
+            }
+            document.getElementById('changeWeekTemplate').onclick = () => {
+                if (isDirty && !confirm('Applying a template will discard your unsaved assignments. Continue?')) return;
+                resetPreview();
+                templateDialog.showModal();
+            };
+            select.onchange = resetPreview;
+            cancel.onclick = () => templateDialog.close();
+            templateDialog.addEventListener('cancel', event => { if (applying) event.preventDefault(); });
+            form.onsubmit = async event => {
+                event.preventDefault();
+                if (applying) return;
+                applying = true;
+                select.disabled = apply.disabled = cancel.disabled = true;
+                error.textContent = '';
+                try {
+                    const response = await fetch('/admin/timeslots/apply-template', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({ weekStart: form.dataset.weekStart,
+                            templateId: select.value === 'default' ? null : Number(select.value),
+                            ignoreConflicts: confirmedTemplate === select.value })
+                    });
+                    if (response.redirected) throw new Error('Your session has expired. Reload and sign in again.');
+                    const result = await response.json();
+                    if (response.status === 409 && result.conflicts) {
+                        confirmedTemplate = select.value;
+                        conflicts.replaceChildren();
+                        const warning = document.createElement('p');
+                        warning.textContent = 'These saved entries are at times removed by this template. Applying will clear only the entries listed below.';
+                        conflicts.appendChild(warning);
+                        for (const [kind, entries] of Object.entries(result.conflicts)) {
+                            if (!Array.isArray(entries)) continue;
+                            const list = document.createElement('ul');
+                            entries.forEach(entry => {
+                                const item = document.createElement('li');
+                                item.textContent = `${kind === 'assignments' ? 'Assignment' : 'Availability'}: ${entry.first_name} ${entry.last_name} · ${entry.day_date} · ${entry.time_slot}`;
+                                list.appendChild(item);
+                            });
+                            conflicts.appendChild(list);
+                        }
+                        conflicts.hidden = false;
+                        apply.textContent = 'Clear listed entries and apply';
+                        return;
+                    }
+                    if (!response.ok) throw new Error(result.error || 'Could not apply template.');
+                    isDirty = false;
+                    window.location.reload();
+                } catch (failure) {
+                    error.textContent = failure.message || 'Could not apply template. Please try again.';
+                } finally {
+                    applying = false;
+                    select.disabled = apply.disabled = cancel.disabled = false;
+                }
+            };
+        }
+
         // Initialize counts
         updateSlotCounts();
 

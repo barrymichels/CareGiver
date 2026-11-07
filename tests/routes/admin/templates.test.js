@@ -622,7 +622,7 @@ describe('Admin Template Routes', () => {
                 .delete(`/admin/timeslot-templates/${result.lastID}`)
                 .expect(400);
 
-            expect(response.body).toHaveProperty('error', 'Cannot delete the default template');
+            expect(response.body).toHaveProperty('error', 'Cannot delete the default template without a replacement');
         });
 
         it('should return 404 for non-existent template', async () => {

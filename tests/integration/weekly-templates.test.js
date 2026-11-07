@@ -101,23 +101,24 @@ describe('Weekly schedule templates', () => {
             .toEqual(['8:00am', '12:30pm', '5:00pm', '9:30pm']);
     });
 
-    it('re-applies a new default to future weeks that only mirror the old one', async () => {
+    it('preserves all configured future weeks when changing the default', async () => {
         await makeTemplate('Standard', Object.values(manager.getFallbackTimeslots()).flat(), true);
         const quiet = await makeTemplate('Quiet weeks', [slot('9:00am'), slot('3:00pm', 1)]);
 
         const bookedWeek = shifted(nextWeek, 7);
         const bookedKey = key(bookedWeek);
         const untouchedWeek = shifted(nextWeek, 14);
-        await manager.getTimeslotsForWeek(nextWeek);
+        const original = await manager.getTimeslotsForWeek(nextWeek);
+        await helper.runWithRetry("INSERT INTO availability (user_id, day_date, time_slot) VALUES (?, ?, ?)", [user.id, nextKey, "8:00am"]);
         const bookedSlot = (await manager.getTimeslotsForWeek(bookedWeek)).timeslots[0][0];
         await assign(bookedKey, bookedSlot.time, bookedSlot.id);
 
         const response = await request(app).post(`/admin/timeslot-templates/${quiet.id}/set-default`).expect(200);
-        expect(response.body.refreshedWeeks).toEqual([nextKey]);
+        expect(response.body.refreshedWeeks).toEqual([]);
 
         const refreshed = await manager.getTimeslotsForWeek(nextWeek);
-        expect(refreshed.config).toMatchObject({ template_id: quiet.id, uses_default: 1 });
-        expect(refreshed.timeslots[0].map(s => s.time)).toEqual(['9:00am', '3:00pm']);
+        expect(refreshed).toEqual(original);
+        expect(await helper.allWithRetry('SELECT * FROM availability WHERE day_date = ?', [nextKey])).toHaveLength(1);
 
         expect((await manager.getTimeslotsForWeek(bookedWeek)).timeslots[0].map(s => s.time))
             .not.toEqual(['9:00am', '3:00pm']);
@@ -126,6 +127,31 @@ describe('Weekly schedule templates', () => {
         // A week nobody has opened yet picks the new default up on first view.
         expect((await manager.getTimeslotsForWeek(untouchedWeek)).timeslots[0].map(s => s.time))
             .toEqual(['9:00am', '3:00pm']);
+    });
+
+    it('opens the template library without creating or changing any week', async () => {
+        await makeTemplate('Library routine', [slot('9:00am')], true);
+        const page = await request(app).get('/admin/timeslots?weekOffset=8').expect(200);
+        expect(page.text).toContain('Schedule Templates');
+        expect(page.text).not.toContain('weekTemplateForm');
+        expect(await helper.allWithRetry('SELECT * FROM timeslot_configurations')).toEqual([]);
+    });
+
+    it('replaces a deleted default atomically and preserves configured times and availability', async () => {
+        const original = await makeTemplate('Original', [slot('8:00am')], true);
+        const replacement = await makeTemplate('Replacement', [slot('10:00am')]);
+        const week = await manager.getTimeslotsForWeek(nextWeek);
+        await assign(nextKey, '8:00am', week.timeslots[0][0].id);
+        await request(app).delete(`/admin/timeslot-templates/${original.id}`)
+            .send({ replacementDefaultId: 999999 }).expect(400);
+        expect((await manager.getDefaultTemplate()).id).toBe(original.id);
+        await request(app).delete(`/admin/timeslot-templates/${original.id}`)
+            .send({ replacementDefaultId: replacement.id }).expect(200);
+        expect((await manager.getDefaultTemplate()).id).toBe(replacement.id);
+        expect((await manager.getTimeslotsForWeek(nextWeek)).timeslots).toEqual(week.timeslots);
+        expect(await helper.allWithRetry('SELECT * FROM assignments')).toHaveLength(1);
+        expect(await helper.allWithRetry('SELECT * FROM availability')).toHaveLength(1);
+        expect(await helper.allWithRetry('SELECT * FROM template_slots WHERE template_id = ?', [original.id])).toEqual([]);
     });
 
     it('renders the same per-day times on all four calendar screens, including days with no slots', async () => {
@@ -137,12 +163,11 @@ describe('Weekly schedule templates', () => {
                 .map(match => match[1]);
             expect(times).toEqual(['9:00am', '3:00pm', '11:00am']);
         }
-        const controls = await request(app).get('/admin/timeslots').query({ weekOffset: 1 }).expect(200);
-        expect(controls.text).toContain('Schedule template for this week:');
-        expect(controls.text).toContain('Use default');
-        expect(controls.text).toContain('Saved schedule: Different days');
+        const controls = await request(app).get('/admin').query({ weekOffset: 1 }).expect(200);
+        expect(controls.text).toContain('Apply to this week');
+        expect(controls.text).toContain('Use current default');
         expect(controls.text).toContain(`value="${template.id}" selected`);
-        expect(controls.text).toContain(`window.weekStart = '${nextKey}'`);
+        expect(controls.text).toContain(`data-week-start="${nextKey}"`);
     });
 
     it('promotes a template to the default when an update asks for it', async () => {
@@ -175,10 +200,10 @@ describe('Weekly schedule templates', () => {
         expect(page.text).not.toContain('</script><script>alert(document.cookie)');
 
         // ...but it must survive as data on the embedding line, escaped.
-        const embedLine = page.text.match(/window\.weekData = (.*);/)[1];
+        const embedLine = page.text.match(/<script id="template-data" type="application\/json">(.*)<\/script>/)[1];
         expect(embedLine).toContain('\\u003cscript\\u003e');
         expect(embedLine).not.toContain('</script>');
-        expect(JSON.parse(embedLine).timeslots[0][0].label).toBe(hostile);
+        expect(JSON.parse(embedLine)[0].slots[0][0].label).toBe(hostile);
     });
 
     it.each([false, true])('applies a new template without blending times across days (Tuesday keeps original times: %s)', async keepTuesday => {
