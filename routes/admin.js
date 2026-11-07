@@ -2,7 +2,7 @@ const express = require('express');
 const { isAuthenticated, isAuthenticatedApi, isAdmin } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
-const { WEEK_DAYS, weekTitleFor, weekWindowFor } = require('../utils/weekView');
+const { WEEK_DAYS, weekTitleFor, weekWindowFor, weekDatesFor } = require('../utils/weekView');
 const { normalizeEmail, isWellFormedEmail } = require('../utils/email');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
@@ -21,7 +21,7 @@ module.exports = function (db) {
             // Limit week offset between -4 and 8
             const limitedOffset = Math.max(-4, Math.min(8, weekOffset));
 
-            // Monday..Sunday of the target week, as local calendar strings
+            // Monday..Sunday of the target week, as New York calendar dates
             const { start: targetWeekStart, sqlStart, sqlEnd } = weekWindowFor(limitedOffset);
 
             // Get only active users
@@ -87,6 +87,7 @@ module.exports = function (db) {
                 users,
                 availability,
                 assignments,
+                weekDates: weekDatesFor(targetWeekStart),
                 nextWeekStart: targetWeekStart,
                 weekTitle,
                 weekOffset: limitedOffset
@@ -417,7 +418,7 @@ module.exports = function (db) {
             }
 
             // Calculate target week start with consistent approach
-            // Monday..Sunday of the target week, as local calendar strings
+            // Monday..Sunday of the target week, as New York calendar dates
             const { start: targetWeekStart, sqlStart, sqlEnd } = weekWindowFor(limitedOffset);
 
             const availability = await new Promise((resolve, reject) => {
@@ -454,6 +455,7 @@ module.exports = function (db) {
                 userAvailability: availability,
                 weekData,
                 days,
+                weekDates: weekDatesFor(targetWeekStart),
                 weekStart: targetWeekStart,
                 weekTitle,
                 weekOffset: limitedOffset

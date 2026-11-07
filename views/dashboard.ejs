@@ -49,26 +49,7 @@
             </div>
             
             <div class="schedule-grid">
-                <% 
-                const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                
-                const getDayTimeSlots = dayIndex => weekData.timeslots[dayIndex] || [];
-
-                // Generate dates for the week using weekStart
-                const weekDates = days.map((day, index) => {
-                    const date = new Date(weekStart);
-                    date.setDate(weekStart.getDate() + index);
-                    return {
-                        name: day,
-                        date: date,
-                        formatted: date.toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric'
-                        })
-                    };
-                });
-                %>
-                
+                <% const getDayTimeSlots = dayIndex => weekData.timeslots[dayIndex] || []; %>
                 <% weekDates.forEach((day, dayIndex) => { %>
                     <div class="day-column">
                         <div class="day-header">
@@ -85,7 +66,7 @@
                                     </div>
                                     <div class="time-slot-content">
                                         <% const assignment = assignments.find(a => 
-                                            a.day_date === day.date.toLocaleDateString('en-CA') && 
+                                            a.day_date === day.date &&
                                             a.time_slot === slot.time
                                         ); %>
                                         <div class="assignment <%= assignment ? 'assigned' : 'open' %>"

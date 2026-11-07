@@ -1,12 +1,6 @@
-// The app derives week keys and `day_date` strings from the machine's *local*
-// calendar (see utils/weekView.js) and is supported only west of UTC - the
-// container runs with TZ=America/New_York, and app.js warns at startup when the
-// resolved zone lies east of it. The suite is pinned to that supported zone so a
-// result stops depending on which hemisphere the contributor happens to sit in:
-// unpinned, a reviewer in Tokyo sees failures on a change that breaks nothing,
-// while a green run on an unsupported zone proves nothing about what anyone
-// deploys. Pinning makes any future drift in either direction visible here.
-process.env.TZ = 'America/New_York';
+// Legacy fixtures outside the schedule module use the process-local clock.
+// Allow explicit UTC runs; calendar regression tests also launch isolated TZ processes.
+process.env.TZ = process.env.TZ || 'America/New_York';
 
 module.exports = {
     testEnvironment: 'node',

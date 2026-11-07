@@ -33,22 +33,6 @@
                 </div>
             </div>
             <div class="schedule-grid">
-                <% 
-                const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                const weekDates = days.map((day, index) => {
-                    const date = new Date(nextWeekStart);
-                    date.setDate(date.getDate() + index);
-                    return {
-                        name: day,
-                        date: date,
-                        formatted: date.toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric'
-                        })
-                    };
-                });
-                %>
-                
                 <% weekDates.forEach((day, dayIndex) => { %>
                     <div class="schedule-day">
                         <div class="day-header">
@@ -59,13 +43,13 @@
                             <% (weekData.timeslots[dayIndex] || []).forEach(slot => { %>
                                 <% 
                                 const assignment = assignments.find(a => 
-                                    a.day_date === day.date.toISOString().split('T')[0] && 
+                                    a.day_date === day.date &&
                                     a.time_slot === slot.time
                                 );
                                 
                                 const availableUsers = availability
                                     .filter(a => 
-                                        a.day_date === day.date.toISOString().split('T')[0] && 
+                                        a.day_date === day.date &&
                                         a.time_slot === slot.time
                                     )
                                     .map(a => ({
@@ -91,9 +75,9 @@
                                         <div class="user-options">
                                             <label class="user-option">
                                                 <input type="radio" 
-                                                       name="slot-<%= day.date.toISOString().split('T')[0] %>-<%= slot.time %>" 
+                                                       name="slot-<%= day.date %>-<%= slot.time %>"
                                                        value=""
-                                                       data-date="<%= day.date.toISOString().split('T')[0] %>"
+                                                       data-date="<%= day.date %>"
                                                        data-time="<%= slot.time %>"
                                                        <%= !assignment ? 'checked' : '' %>>
                                                 <span class="option-label">Unassigned</span>
@@ -101,9 +85,9 @@
                                             <% if (hasConflict) { %>
                                                 <label class="user-option conflict">
                                                     <input type="radio" 
-                                                           name="slot-<%= day.date.toISOString().split('T')[0] %>-<%= slot.time %>" 
+                                                           name="slot-<%= day.date %>-<%= slot.time %>"
                                                            value="<%= assignment.user_id %>"
-                                                           data-date="<%= day.date.toISOString().split('T')[0] %>"
+                                                           data-date="<%= day.date %>"
                                                            data-time="<%= slot.time %>"
                                                            checked>
                                                     <span class="option-label"><%= assignment.first_name %></span>
@@ -112,9 +96,9 @@
                                             <% availableUsers.forEach(user => { %>
                                                 <label class="user-option">
                                                     <input type="radio" 
-                                                           name="slot-<%= day.date.toISOString().split('T')[0] %>-<%= slot.time %>" 
+                                                           name="slot-<%= day.date %>-<%= slot.time %>"
                                                            value="<%= user.id %>"
-                                                           data-date="<%= day.date.toISOString().split('T')[0] %>"
+                                                           data-date="<%= day.date %>"
                                                            data-time="<%= slot.time %>"
                                                            <%= !hasConflict && assignment && assignment.user_id === user.id ? 'checked' : '' %>>
                                                     <span class="option-label"><%= user.firstName %></span>

@@ -4,7 +4,7 @@ const request = require('supertest');
 const sqlite3 = require('sqlite3');
 const initializeDatabase = require('../../config/database.init');
 const DatabaseHelper = require('../../utils/dbHelper');
-const { weekWindowFor, formatLocalDate } = require('../../utils/weekView');
+const { weekWindowFor, addDays } = require('../../utils/weekView');
 
 /**
  * GET /export-calendar, the calendar-client contract.
@@ -30,11 +30,7 @@ describe('GET /export-calendar', () => {
     // otherwise disagree with it about which Monday is "this" one.
     let sqlStart, sqlEnd, nextMondayKey;
 
-    const shiftedWeekStart = (days) => {
-        const date = new Date(weekWindowFor(0).start);
-        date.setDate(date.getDate() + days);
-        return date;
-    };
+
 
     const insertAssignment = (dayDate, timeSlot, assignedUserId = userId) => helper.runWithRetry(
         'INSERT INTO assignments (user_id, day_date, time_slot, assigned_by) VALUES (?, ?, ?, ?)',
@@ -75,7 +71,7 @@ describe('GET /export-calendar', () => {
         const window = weekWindowFor(0);
         sqlStart = window.sqlStart;
         sqlEnd = window.sqlEnd;
-        nextMondayKey = formatLocalDate(shiftedWeekStart(7));
+        nextMondayKey = addDays(window.start, 7);
 
         for (const table of ['assignments', 'availability', 'timeslots', 'timeslot_configurations',
             'template_slots', 'timeslot_templates', 'users']) {

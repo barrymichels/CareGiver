@@ -107,10 +107,16 @@ Routes follow factory pattern: `module.exports = function(db) { return router; }
 
 **Week Calculations:**
 ```javascript
-// Monday-to-Sunday week start calculation using TimeslotManager
-const timeslotManager = new TimeslotManager(db);
-const weekStart = timeslotManager.getWeekStart(today);
+// Clock instants become America/New_York calendar dates; weeks use date-only strings.
+const { weekStartFor, parseWeekStart } = require('./utils/weekView');
+const weekStart = weekStartFor(); // Current Monday, YYYY-MM-DD
+const requestedWeek = parseWeekStart('2026-11-01'); // Date-only input → Monday
 ```
+
+**Calendar rules:**
+- Schedule days and weeks follow America/New_York (EST/EDT), including in UTC containers.
+- Use `utils/weekView.js` for calendar arithmetic and rendered week dates. Keep saved/requested dates as `YYYY-MM-DD` strings; do not convert them to local instants.
+- Notification timing still uses the process timezone (`TZ`); calendar-export event times remain floating wall times.
 
 **Dynamic Time Slots:**
 - Flexible timeslots configurable per week by admins

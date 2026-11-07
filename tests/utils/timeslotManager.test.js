@@ -1,3 +1,4 @@
+const { weekStartFor, addDays } = require('../../utils/weekView');
 const { testDb, initializeTestDb } = require('../../config/test.db');
 const { clearTestDb, createTestUser } = require('../helpers/testHelpers');
 const TimeslotManager = require('../../utils/timeslotManager');
@@ -16,41 +17,12 @@ describe('TimeslotManager', () => {
         testUser = await createTestUser();
     });
 
-    describe('getWeekStart', () => {
-        it('should return Monday for any day of the week', () => {
-            // Test different days of the week
-            const tuesday = new Date('2024-01-02T10:00:00'); // Tuesday
-            const saturday = new Date('2024-01-06T10:00:00'); // Saturday
-            const sunday = new Date('2024-01-07T10:00:00'); // Sunday
-            const monday = new Date('2024-01-01T10:00:00'); // Monday
-
-            const mondayStart = timeslotManager.getWeekStart(monday);
-            const tuesdayStart = timeslotManager.getWeekStart(tuesday);
-            const saturdayStart = timeslotManager.getWeekStart(saturday);
-            const sundayStart = timeslotManager.getWeekStart(sunday);
-
-            // All should return Monday Jan 1, 2024
-            expect(mondayStart.toISOString().split('T')[0]).toBe('2024-01-01');
-            expect(tuesdayStart.toISOString().split('T')[0]).toBe('2024-01-01');
-            expect(saturdayStart.toISOString().split('T')[0]).toBe('2024-01-01');
-            expect(sundayStart.toISOString().split('T')[0]).toBe('2024-01-01');
-
-            // All should be at midnight
-            expect(mondayStart.getHours()).toBe(0);
-            expect(tuesdayStart.getHours()).toBe(0);
-            expect(saturdayStart.getHours()).toBe(0);
-            expect(sundayStart.getHours()).toBe(0);
-        });
-    });
-
     describe('canModifyWeek', () => {
         it('should allow modification of current and future weeks', () => {
             const today = new Date();
-            const currentWeek = timeslotManager.getWeekStart(today);
-            const nextWeek = new Date(currentWeek);
-            nextWeek.setDate(currentWeek.getDate() + 7);
-            const lastWeek = new Date(currentWeek);
-            lastWeek.setDate(currentWeek.getDate() - 7);
+            const currentWeek = weekStartFor(today);
+            const nextWeek = addDays(currentWeek, 7);
+            const lastWeek = addDays(currentWeek, -7);
 
             expect(timeslotManager.canModifyWeek(currentWeek)).toBe(true);
             expect(timeslotManager.canModifyWeek(nextWeek)).toBe(true);
@@ -76,7 +48,7 @@ describe('TimeslotManager', () => {
 
     describe('getTimeslotsForWeek', () => {
         it('should return fallback timeslots for weeks without configuration', async () => {
-            const weekStart = new Date('2024-01-01'); // Monday
+            const weekStart = '2024-01-01'; // Monday
             const result = await timeslotManager.getTimeslotsForWeek(weekStart);
 
             expect(result.config).toBeNull();
@@ -137,7 +109,7 @@ describe('TimeslotManager', () => {
         it('should create configuration for future weeks', async () => {
             const futureWeek = new Date();
             futureWeek.setDate(futureWeek.getDate() + 14); // 2 weeks from now
-            const weekStart = timeslotManager.getWeekStart(futureWeek);
+            const weekStart = weekStartFor(futureWeek);
 
             const slots = [
                 { day_of_week: 0, time: '10:00am', label: 'Morning', slot_order: 0 },
@@ -151,14 +123,14 @@ describe('TimeslotManager', () => {
             );
 
             expect(result.config.id).toBeDefined();
-            expect(result.config.week_start).toBe(weekStart.toISOString().split('T')[0]);
+            expect(result.config.week_start).toBe(weekStart);
             expect(result.timeslots[0]).toHaveLength(2); // Monday has 2 slots
         });
 
         it('should reject creation for past weeks', async () => {
             const pastWeek = new Date();
             pastWeek.setDate(pastWeek.getDate() - 7); // Last week
-            const weekStart = timeslotManager.getWeekStart(pastWeek);
+            const weekStart = weekStartFor(pastWeek);
 
             const slots = [
                 { day_of_week: 0, time: '10:00am', label: 'Morning', slot_order: 0 }

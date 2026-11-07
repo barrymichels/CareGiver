@@ -4,7 +4,7 @@ The family coordinates caregiving visits through weekly schedules.
 
 ## Language
 
-**Schedule week**: A Monday-through-Sunday period with its own saved visit times.
+**Schedule week**: A Monday-through-Sunday period in America/New_York time (EST or EDT), with its own saved visit times. The current day changes at midnight there, and the current week changes at Monday midnight there, regardless of where the schedule is viewed or hosted.
 
 **Schedule template**: A reusable set of visit times and labels for each weekday. Applying a template saves a copy of those times in one schedule week.
 

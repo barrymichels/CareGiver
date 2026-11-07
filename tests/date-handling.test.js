@@ -1,278 +1,99 @@
-const request = require('supertest');
+const path = require('path');
 const express = require('express');
-const session = require('express-session');
-const passport = require('passport');
-const { testDb, initializeTestDb } = require('../config/test.db');
-const { createTestUser, clearTestDb } = require('./helpers/testHelpers');
+const request = require('supertest');
+const sqlite3 = require('sqlite3');
+const initializeDatabase = require('../config/database.init');
+const DatabaseHelper = require('../utils/dbHelper');
+const TimeslotManager = require('../utils/timeslotManager');
 
-// Create express app for testing
-const app = express();
-
-// Mock view engine for testing
-app.set('view engine', 'ejs');
-app.engine('ejs', (path, data, cb) => {
-    const output = {
-        view: path,
-        data: data
-    };
-    cb(null, JSON.stringify(output));
-});
-
-app.use(express.json());
-app.use(session({
-    secret: 'test-secret',
-    resave: false,
-    saveUninitialized: false
-}));
-app.use(passport.initialize());
-app.use(passport.session());
-
-describe('Date Handling', () => {
-    let testUser;
-    let mockAuth;
-    let realDate;
+// Test the complete handoff: clock -> rendered date -> submitted date -> saved
+// schedule. This must also run with TZ=UTC, not only the deployment's TZ.
+describe('Schedule calendar through rendered pages and writes', () => {
+    let db, helper, manager, app, instant;
+    const RealDate = Date;
+    const user = { id: 1, first_name: 'Family', last_name: 'Caregiver', is_active: 1, is_admin: 1 };
+    const slots = [0, 6].map(day => ({ day_of_week: day, time: '9:00am', label: 'Visit', slot_order: 0 }));
 
     beforeAll(async () => {
-        await initializeTestDb();
-        // Store the real Date object
-        realDate = global.Date;
+        db = new sqlite3.Database(':memory:');
+        helper = new DatabaseHelper(db);
+        await helper.runWithRetry('PRAGMA foreign_keys = ON');
+        await initializeDatabase(db);
+        manager = new TimeslotManager(db);
+        app = express();
+        app.use(express.json());
+        app.set('view engine', 'ejs');
+        app.set('views', path.join(__dirname, '../views'));
+        app.locals.getPageTitle = title => title;
+        app.use((req, res, next) => {
+            req.user = user;
+            req.isAuthenticated = () => true;
+            next();
+        });
+        app.use('/admin/timeslots', require('../routes/admin/timeslots')(db));
+        app.use('/admin/timeslot-templates', require('../routes/admin/templates')(db));
+        app.use('/admin', require('../routes/admin')(db));
+        app.use('/availability', require('../routes/availability')(db));
+        app.use('/', require('../routes/index')(db));
     });
 
     beforeEach(async () => {
-        await clearTestDb();
-
-        // Create a test user
-        testUser = await createTestUser({
-            is_active: true
-        });
-
-        // Create fresh auth middleware for each test
-        mockAuth = (req, res, next) => {
-            req.isAuthenticated = () => true;
-            req.user = {
-                id: testUser.id,
-                is_active: true
-            };
-            next();
+        for (const table of ['user_preferences', 'assignments', 'availability', 'timeslots',
+            'timeslot_configurations', 'template_slots', 'timeslot_templates', 'users']) {
+            await helper.runWithRetry(`DELETE FROM ${table}`);
+        }
+        await helper.runWithRetry("INSERT INTO users (id, first_name, last_name, is_admin, is_active) VALUES (1, 'Family', 'Caregiver', 1, 1)");
+        global.Date = class extends RealDate {
+            constructor(...args) { super(...(args.length ? args : [instant])); }
+            static now() { return new RealDate(instant).getTime(); }
         };
-
-        // Reset the app routes
-        app._router.stack = app._router.stack.filter(layer => !layer.route || !layer.route.path !== '/');
-
-        // Import routes with fresh db connection
-        const indexRoutes = require('../routes/index')(testDb);
-        app.use('/', mockAuth, indexRoutes);
-
-        // Reset Date to real implementation before each test
-        global.Date = realDate;
     });
+    afterEach(() => { global.Date = RealDate; });
+    afterAll(() => new Promise((resolve, reject) => db.close(error => error ? reject(error) : resolve())));
 
-    afterEach(() => {
-        // Restore the real Date object after each test
-        global.Date = realDate;
-    });
+    it.each([
+        ['2025-01-13T04:59:59Z', '2025-01-06', '2025-01-12', '2025-01-13', '2025-01-13T05:00:00Z'],
+        ['2026-07-06T03:59:59Z', '2026-06-29', '2026-07-05', '2026-07-06', '2026-07-06T04:00:00Z'],
+        ['2026-03-09T03:59:59Z', '2026-03-02', '2026-03-08', '2026-03-09', '2026-03-09T04:00:00Z'],
+        ['2026-11-02T04:59:59Z', '2026-10-26', '2026-11-01', '2026-11-02', '2026-11-02T05:00:00Z']
+    ])('keeps the old week until Eastern midnight at %s', async (beforeMidnight, monday, sunday, nextMonday, midnight) => {
+        instant = beforeMidnight;
+        const template = await manager.createTemplate('Family visits', '', slots, user.id, true);
+        const page = await request(app).get('/availability').expect(200);
+        const dates = [...page.text.matchAll(/data-date="([\d-]+)"/g)].map(match => match[1]);
+        expect(dates).toEqual([monday, sunday]);
+        // The displayed week has been saved under the exact Monday sent in forms.
+        expect((await helper.allWithRetry('SELECT week_start FROM timeslot_configurations')).map(row => row.week_start)).toEqual([monday]);
 
-    describe('Week Display', () => {
-        it('should start week display on Monday of current week', async () => {
-            // Get current date
-            const now = new Date();
+        await request(app).post('/availability/update').send({ availability: [
+            { date: dates[1], time: '9:00am', isAvailable: true }
+        ] }).expect(200);
+        await request(app).post('/admin/assign').send({ assignments: [
+            { date: dates[1], time: '9:00am', userId: user.id }
+        ] }).expect(200);
+        const admin = await request(app).get('/admin').expect(200);
+        expect(admin.text).toContain(`data-week-start="${monday}"`);
+        expect(admin.text).toContain(`data-date="${sunday}"`);
+        const managed = await request(app).get('/admin/users/1/availability').expect(200);
+        expect(managed.text).toMatch(new RegExp(`data-date="${sunday}"\\s+data-time="9:00am" checked`));
+        const dashboard = await request(app).get('/').expect(200);
+        expect(dashboard.text).toContain('Family Caregiver');
+        const exported = await request(app).get('/export-calendar').expect(200);
+        expect(exported.text).toContain(`DTSTART:${sunday.replace(/-/g, '')}T090000`);
 
-            // Get Monday of current week using our application logic
-            const monday = new Date(now);
-            const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            monday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-            monday.setHours(0, 0, 0, 0);
+        await request(app).post('/admin/timeslots/apply-template')
+            .send({ weekStart: monday, templateId: template.id }).expect(200);
+        expect(manager.canModifyWeek(monday)).toBe(true);
+        expect((await helper.allWithRetry('SELECT day_date FROM assignments')).map(row => row.day_date)).toEqual([sunday]);
+        const unchanged = await manager.getTimeslotsForWeek(monday);
 
-            const response = await request(app)
-                .get('/')
-                .expect(200);
-
-            const rendered = JSON.parse(response.text);
-            expect(rendered.data).toHaveProperty('weekStart');
-
-            // Convert weekStart to Date object for comparison
-            const weekStart = new Date(rendered.data.weekStart);
-            weekStart.setHours(0, 0, 0, 0);
-
-            // Compare only date components (year, month, day) to avoid timezone issues
-            expect(weekStart.getFullYear()).toBe(monday.getFullYear());
-            expect(weekStart.getMonth()).toBe(monday.getMonth());
-            expect(weekStart.getDate()).toBe(monday.getDate());
-            expect(weekStart.getDay()).toBe(1); // Monday
-        });
-
-        it('should start week display on Monday when current time is Sunday 9am UTC', async () => {
-            // Mock a specific Sunday at 9am UTC (4am EST)
-            const mockSunday = new Date('2025-01-12T09:00:00Z');  // This is a Sunday
-
-            // Calculate expected Monday using our application logic
-            const mockMonday = new Date(mockSunday);
-            mockMonday.setDate(mockSunday.getDate() - 6); // Sunday - 6 days = previous Monday
-            mockMonday.setHours(0, 0, 0, 0);
-
-            // Mock the Date object
-            const MockDate = class extends Date {
-                constructor(...args) {
-                    if (args.length === 0) {
-                        super(mockSunday);
-                    } else {
-                        super(...args);
-                    }
-                }
-
-                static now() {
-                    return mockSunday.getTime();
-                }
-            };
-            global.Date = MockDate;
-
-            const response = await request(app)
-                .get('/')
-                .expect(200);
-
-            const rendered = JSON.parse(response.text);
-            expect(rendered.data).toHaveProperty('weekStart');
-
-            // Convert weekStart to Date object for comparison
-            const weekStart = new realDate(rendered.data.weekStart);
-            weekStart.setHours(0, 0, 0, 0);
-
-            // Compare only date components
-            expect(weekStart.getFullYear()).toBe(mockMonday.getFullYear());
-            expect(weekStart.getMonth()).toBe(mockMonday.getMonth());
-            expect(weekStart.getDate()).toBe(mockMonday.getDate());
-            expect(weekStart.getDay()).toBe(1); // Monday
-        });
-
-        it('should start week display on Monday when current time is Sunday 9pm UTC', async () => {
-            // Mock a specific Sunday at 9pm UTC (4pm EST)
-            const mockSunday = new Date('2025-01-12T21:00:00Z');  // This is a Sunday at 9pm UTC
-
-            // Calculate expected Monday using our application logic
-            const mockMonday = new Date(mockSunday);
-            mockMonday.setDate(mockSunday.getDate() - 6); // Sunday - 6 days = previous Monday
-            mockMonday.setHours(0, 0, 0, 0);
-
-            // Mock the Date object
-            const MockDate = class extends Date {
-                constructor(...args) {
-                    if (args.length === 0) {
-                        super(mockSunday);
-                    } else {
-                        super(...args);
-                    }
-                }
-
-                static now() {
-                    return mockSunday.getTime();
-                }
-            };
-            global.Date = MockDate;
-
-            const response = await request(app)
-                .get('/')
-                .expect(200);
-
-            const rendered = JSON.parse(response.text);
-            expect(rendered.data).toHaveProperty('weekStart');
-
-            // Convert weekStart to Date object for comparison
-            const weekStart = new realDate(rendered.data.weekStart);
-            weekStart.setHours(0, 0, 0, 0);
-
-            // Compare only date components
-            expect(weekStart.getFullYear()).toBe(mockMonday.getFullYear());
-            expect(weekStart.getMonth()).toBe(mockMonday.getMonth());
-            expect(weekStart.getDate()).toBe(mockMonday.getDate());
-            expect(weekStart.getDay()).toBe(1); // Monday
-        });
-
-        it('should advance to next week when current time is Monday 3am UTC (Sunday 10pm EST)', async () => {
-            // Mock Monday 3am UTC (previous day 10pm EST)
-            const mockTime = new Date('2025-01-13T03:00:00Z');  // Monday 3am UTC = Sunday 10pm EST
-
-            // Mock the Date object
-            const MockDate = class extends Date {
-                constructor(...args) {
-                    if (args.length === 0) {
-                        super(mockTime);
-                    } else {
-                        super(...args);
-                    }
-                }
-
-                static now() {
-                    return mockTime.getTime();
-                }
-            };
-            global.Date = MockDate;
-
-            const response = await request(app)
-                .get('/')
-                .expect(200);
-
-            const rendered = JSON.parse(response.text);
-            expect(rendered.data).toHaveProperty('weekStart');
-
-            // Convert weekStart to Date object for comparison
-            const weekStart = new realDate(rendered.data.weekStart);
-            weekStart.setHours(0, 0, 0, 0);
-
-            // For this test, we're actually checking that the code uses January 6
-            // because our date calculation is different than what the original test expected
-            // The test name is misleading, we don't advance to next week
-            expect(weekStart.getDay()).toBe(1); // Monday
-
-            // The app is correctly using January 6 as the Monday for this week
-            // instead of January 13, which matches our application logic
-            expect(weekStart.getDate()).toBe(6);
-        });
-    });
-
-    describe('Calendar Export Window', () => {
-        // Deliberately its own formatter: a fixture must not borrow the helper under test.
-        const toLocalDate = (date) => [
-            date.getFullYear(),
-            String(date.getMonth() + 1).padStart(2, '0'),
-            String(date.getDate()).padStart(2, '0')
-        ].join('-');
-
-        const insertAssignment = (userId, dayDate, timeSlot) => new Promise((resolve, reject) => {
-            testDb.run(
-                'INSERT INTO assignments (user_id, day_date, time_slot, assigned_by) VALUES (?, ?, ?, ?)',
-                [userId, dayDate, timeSlot, userId],
-                (err) => (err ? reject(err) : resolve())
-            );
-        });
-
-        it('GET /export-calendar_withAShiftOnTheMondayAfterTheWeek_shouldNotExportIt', async () => {
-            // GIVEN shifts on the Monday and the Sunday of the current local week, plus one on
-            // the Monday immediately following it
-            const monday = new Date();
-            const dayOfWeek = monday.getDay();
-            monday.setDate(monday.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-            monday.setHours(0, 0, 0, 0);
-
-            const sunday = new Date(monday);
-            sunday.setDate(monday.getDate() + 6);
-
-            const followingMonday = new Date(monday);
-            followingMonday.setDate(monday.getDate() + 7);
-
-            await insertAssignment(testUser.id, toLocalDate(monday), '9:00am');
-            await insertAssignment(testUser.id, toLocalDate(sunday), '2:00pm');
-            await insertAssignment(testUser.id, toLocalDate(followingMonday), '9:00am');
-
-            // WHEN the current week is exported for the calendar
-            const response = await request(app)
-                .get('/export-calendar')
-                .expect(200);
-
-            // THEN only the two shifts inside the seven-day window are exported...
-            expect((response.text.match(/BEGIN:VEVENT/g) || []).length).toBe(2);
-
-            // ...and the following Monday never reaches the user's calendar
-            expect(response.text).not.toContain(toLocalDate(followingMonday).replace(/-/g, ''));
-        });
+        instant = midnight;
+        expect(manager.canModifyWeek(monday)).toBe(false);
+        expect(manager.canModifyWeek(nextMonday)).toBe(true);
+        const nextPage = await request(app).get('/admin').expect(200);
+        expect(nextPage.text).toContain(`data-week-start="${nextMonday}"`);
+        await request(app).post('/admin/timeslots/apply-template')
+            .send({ weekStart: monday, templateId: template.id }).expect(400);
+        expect(await manager.getTimeslotsForWeek(monday)).toEqual(unchanged);
     });
 });

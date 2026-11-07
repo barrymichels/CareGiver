@@ -1,3 +1,4 @@
+const { weekStartFor, parseWeekStart, addDays } = require('../../utils/weekView');
 const path = require('path');
 const express = require('express');
 const request = require('supertest');
@@ -9,12 +10,6 @@ const TimeslotManager = require('../../utils/timeslotManager');
 describe('Weekly schedule templates', () => {
     let db, helper, manager, app, user, currentWeek, nextWeek, currentKey, nextKey;
     const slot = (time, order = 0, day = 0) => ({ day_of_week: day, time, label: time, slot_order: order });
-    const key = date => date.toISOString().slice(0, 10);
-    const shifted = (date, days) => {
-        const result = new Date(date);
-        result.setDate(result.getDate() + days);
-        return result;
-    };
 
     beforeAll(async () => {
         db = new sqlite3.Database(':memory:');
@@ -45,10 +40,10 @@ describe('Weekly schedule templates', () => {
         }
         user = { id: 7, first_name: 'Test', last_name: 'Caregiver', is_admin: 1, is_active: 1 };
         await helper.runWithRetry("INSERT INTO users (id, first_name, last_name, is_admin, is_active) VALUES (7, 'Test', 'Caregiver', 1, 1)");
-        currentWeek = manager.getWeekStart(new Date());
-        nextWeek = shifted(currentWeek, 7);
-        currentKey = key(currentWeek);
-        nextKey = key(nextWeek);
+        currentWeek = weekStartFor(new Date());
+        nextWeek = addDays(currentWeek, 7);
+        currentKey = currentWeek;
+        nextKey = nextWeek;
     });
 
     afterAll(() => new Promise((resolve, reject) => db.close(error => error ? reject(error) : resolve())));
@@ -88,7 +83,7 @@ describe('Weekly schedule templates', () => {
             .send({ name: 'Edited routine', slots: [slot('10:00am')] }).expect(200);
         expect((await manager.getTimeslotsForWeek(nextWeek)).timeslots[0].map(s => s.time)).toEqual(['9:00am', '3:00pm']);
         await manager.setDefaultTemplate(alternate.id);
-        expect((await manager.getTimeslotsForWeek(shifted(nextWeek, 7))).timeslots[0][0].time).toBe('10:00am');
+        expect((await manager.getTimeslotsForWeek(addDays(nextWeek, 7))).timeslots[0][0].time).toBe('10:00am');
         expect(await manager.getTimeslotsForWeek(currentWeek)).toEqual(current);
         await manager.setDefaultTemplate(defaultTemplate.id);
         await manager.deleteTemplate(alternate.id);
@@ -108,32 +103,32 @@ describe('Weekly schedule templates', () => {
         await manager.getTimeslotsForWeek(currentWeek);
         // Even an explicit selection is replaceable when nobody has entered availability or assignments.
         await manager.applyTemplate(nextWeek, original.id, user.id);
-        const availabilityWeek = shifted(nextWeek, 7);
-        const assignmentWeek = shifted(nextWeek, 14);
-        const pastKey = key(shifted(currentWeek, -7));
+        const availabilityWeek = addDays(nextWeek, 7);
+        const assignmentWeek = addDays(nextWeek, 14);
+        const pastKey = addDays(currentWeek, -7);
         const available = await manager.getTimeslotsForWeek(availabilityWeek);
         const assigned = await manager.getTimeslotsForWeek(assignmentWeek);
         await helper.runWithRetry('INSERT INTO availability (user_id, day_date, time_slot, is_available) VALUES (?, ?, ?, ?)',
-            [user.id, key(availabilityWeek), '8:00am', 0]);
+            [user.id, availabilityWeek, '8:00am', 0]);
         await helper.runWithRetry('INSERT INTO assignments (user_id, day_date, time_slot, assigned_by) VALUES (?, ?, ?, ?)',
-            [user.id, key(assignmentWeek), '8:00am', user.id]);
+            [user.id, assignmentWeek, '8:00am', user.id]);
         await helper.runWithRetry('INSERT INTO timeslot_configurations (week_start, created_by, template_id, template_name, uses_default) VALUES (?, ?, ?, ?, 1)',
             [pastKey, user.id, original.id, original.name]);
-        const past = await manager.getTimeslotsForWeek(shifted(currentWeek, -7));
+        const past = await manager.getTimeslotsForWeek(addDays(currentWeek, -7));
         const savedAvailability = await helper.allWithRetry('SELECT * FROM availability');
         const savedAssignments = await helper.allWithRetry('SELECT * FROM assignments');
 
         const response = await request(app).post(`/admin/timeslot-templates/${replacement.id}/set-default`).expect(200);
         expect(response.body.refreshedWeeks).toEqual([currentKey, nextKey]);
-        expect(response.body.protectedWeeks).toEqual([key(availabilityWeek), key(assignmentWeek)]);
-        for (const week of [currentWeek, nextWeek, shifted(nextWeek, 21)]) {
+        expect(response.body.protectedWeeks).toEqual([availabilityWeek, assignmentWeek]);
+        for (const week of [currentWeek, nextWeek, addDays(nextWeek, 21)]) {
             const saved = await manager.getTimeslotsForWeek(week);
             expect(saved.config).toMatchObject({ template_id: replacement.id, uses_default: 1 });
             expect(saved.timeslots[0].map(s => s.time)).toEqual(['9:00am', '3:00pm']);
         }
         expect(await manager.getTimeslotsForWeek(availabilityWeek)).toEqual(available);
         expect(await manager.getTimeslotsForWeek(assignmentWeek)).toEqual(assigned);
-        expect(await manager.getTimeslotsForWeek(shifted(currentWeek, -7))).toEqual(past);
+        expect(await manager.getTimeslotsForWeek(addDays(currentWeek, -7))).toEqual(past);
         expect(await helper.allWithRetry('SELECT * FROM availability')).toEqual(savedAvailability);
         expect(await helper.allWithRetry('SELECT * FROM assignments')).toEqual(savedAssignments);
 
@@ -147,9 +142,9 @@ describe('Weekly schedule templates', () => {
         }
         // Protected weeks still need explicit confirmation for removed entries.
         await request(app).post('/admin/timeslots/apply-template')
-            .send({ weekStart: key(assignmentWeek), templateId: replacement.id }).expect(409);
+            .send({ weekStart: assignmentWeek, templateId: replacement.id }).expect(409);
         await request(app).post('/admin/timeslots/apply-template')
-            .send({ weekStart: key(assignmentWeek), templateId: replacement.id, ignoreConflicts: true }).expect(200);
+            .send({ weekStart: assignmentWeek, templateId: replacement.id, ignoreConflicts: true }).expect(200);
         expect(await helper.allWithRetry('SELECT * FROM assignments')).toEqual([]);
         expect(await helper.allWithRetry('SELECT * FROM availability')).toEqual(savedAvailability);
     });
@@ -372,11 +367,11 @@ describe('Weekly schedule templates', () => {
     });
 
     it('normalizes date-only weeks across Sunday and DST, rejects invalid dates and protects past weeks', async () => {
-        expect(key(manager.parseWeekStart('2026-11-01'))).toBe('2026-10-26');
-        expect(key(manager.parseWeekStart('2026-11-02'))).toBe('2026-11-02');
-        expect(() => manager.parseWeekStart('2026-02-30')).toThrow('Invalid week start date');
+        expect(parseWeekStart('2026-11-01')).toBe('2026-10-26');
+        expect(parseWeekStart('2026-11-02')).toBe('2026-11-02');
+        expect(() => parseWeekStart('2026-02-30')).toThrow('Invalid week start date');
         await request(app).post('/admin/timeslots/apply-template')
-            .send({ weekStart: key(shifted(currentWeek, -7)), templateId: null }).expect(400);
+            .send({ weekStart: addDays(currentWeek, -7), templateId: null }).expect(400);
         user.is_admin = 0;
         await request(app).post('/admin/timeslots/apply-template')
             .send({ weekStart: nextKey, templateId: null }).expect(403);

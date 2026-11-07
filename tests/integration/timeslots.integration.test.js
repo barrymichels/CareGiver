@@ -1,3 +1,4 @@
+const { weekStartFor, addDays } = require('../../utils/weekView');
 const request = require('supertest');
 const express = require('express');
 const session = require('express-session');
@@ -72,7 +73,7 @@ describe('Timeslots Integration Tests', () => {
             // Step 2: Apply template to future week
             const futureDate = new Date();
             futureDate.setDate(futureDate.getDate() + 14);
-            const weekStart = timeslotManager.getWeekStart(futureDate);
+            const weekStart = weekStartFor(futureDate);
 
             const appliedConfig = await timeslotManager.applyTemplate(
                 weekStart,
@@ -134,8 +135,7 @@ describe('Timeslots Integration Tests', () => {
             expect(updatedConfig.timeslots[0]).toHaveLength(5); // Now 5 slots on Monday
 
             // Step 7: Copy configuration to another week
-            const nextWeekDate = new Date(weekStart);
-            nextWeekDate.setDate(nextWeekDate.getDate() + 7);
+            const nextWeekDate = addDays(weekStart, 7);
 
             const copiedConfig = await timeslotManager.copyFromPreviousWeek(
                 nextWeekDate,
@@ -148,7 +148,7 @@ describe('Timeslots Integration Tests', () => {
             // Step 8: Verify fallback behavior for unconfigured weeks
             const distantFutureDate = new Date();
             distantFutureDate.setDate(distantFutureDate.getDate() + 60);
-            const distantWeekStart = timeslotManager.getWeekStart(distantFutureDate);
+            const distantWeekStart = weekStartFor(distantFutureDate);
 
             const fallbackConfig = await timeslotManager.getTimeslotsForWeek(distantWeekStart);
             // Should get default template applied automatically
@@ -161,7 +161,7 @@ describe('Timeslots Integration Tests', () => {
         it('should prevent modifications to past weeks', async () => {
             const pastDate = new Date();
             pastDate.setDate(pastDate.getDate() - 14);
-            const pastWeekStart = timeslotManager.getWeekStart(pastDate);
+            const pastWeekStart = weekStartFor(pastDate);
 
             // Should not be able to create configuration for past week
             await expect(
@@ -187,7 +187,7 @@ describe('Timeslots Integration Tests', () => {
             // Should not be able to copy to past week
             const futureDate = new Date();
             futureDate.setDate(futureDate.getDate() + 14);
-            const futureWeekStart = timeslotManager.getWeekStart(futureDate);
+            const futureWeekStart = weekStartFor(futureDate);
 
             await expect(
                 timeslotManager.copyFromPreviousWeek(pastWeekStart, futureWeekStart, adminUser.id)
@@ -195,10 +195,10 @@ describe('Timeslots Integration Tests', () => {
         });
 
         it('should allow modifications to current and future weeks', async () => {
-            const currentWeekStart = timeslotManager.getWeekStart(new Date());
+            const currentWeekStart = weekStartFor(new Date());
             const futureDate = new Date();
             futureDate.setDate(futureDate.getDate() + 14);
-            const futureWeekStart = timeslotManager.getWeekStart(futureDate);
+            const futureWeekStart = weekStartFor(futureDate);
 
             // Should be able to modify current week
             expect(timeslotManager.canModifyWeek(currentWeekStart)).toBe(true);
@@ -272,7 +272,7 @@ describe('Timeslots Integration Tests', () => {
             // Request timeslots for future week that doesn't have configuration
             const futureDate = new Date();
             futureDate.setDate(futureDate.getDate() + 21);
-            const futureWeekStart = timeslotManager.getWeekStart(futureDate);
+            const futureWeekStart = weekStartFor(futureDate);
 
             const weekData = await timeslotManager.getTimeslotsForWeek(futureWeekStart);
 
@@ -288,7 +288,7 @@ describe('Timeslots Integration Tests', () => {
         it('should handle missing timeslot configurations gracefully', async () => {
             const futureDate = new Date();
             futureDate.setDate(futureDate.getDate() + 30);
-            const futureWeekStart = timeslotManager.getWeekStart(futureDate);
+            const futureWeekStart = weekStartFor(futureDate);
 
             // No default template exists, should return fallback
             const weekData = await timeslotManager.getTimeslotsForWeek(futureWeekStart);
@@ -314,13 +314,12 @@ describe('Timeslots Integration Tests', () => {
                 testDates.push(testDate);
             }
 
-            const expectedMonday = timeslotManager.getWeekStart(testDates[0]);
+            const expectedMonday = weekStartFor(testDates[0]);
             
             testDates.forEach((date, index) => {
-                const weekStart = timeslotManager.getWeekStart(date);
-                expect(weekStart.getDay()).toBe(1); // Should always be Monday (day 1)
+                const weekStart = weekStartFor(date);
                 // All dates in the same week should return the same Monday
-                expect(weekStart.getDate()).toBe(expectedMonday.getDate());
+                expect(weekStart).toBe(expectedMonday);
             });
         });
 
@@ -330,7 +329,7 @@ describe('Timeslots Integration Tests', () => {
             const futureDate = new Date();
             futureDate.setDate(futureDate.getDate() + 14); // 2 weeks in future
             const config = await timeslotManager.createTimeslotConfiguration(
-                timeslotManager.getWeekStart(futureDate),
+                weekStartFor(futureDate),
                 [
                     { day_of_week: 0, time: '8:00am', label: 'Morning 1', slot_order: 0 },
                     { day_of_week: 0, time: '8:00am', label: 'Morning 2', slot_order: 1 }
@@ -380,7 +379,7 @@ describe('Timeslots Integration Tests', () => {
             for (let i = 0; i < weekCount; i++) {
                 const weekDate = new Date(baseDate);
                 weekDate.setDate(baseDate.getDate() + (i * 7));
-                const weekStart = timeslotManager.getWeekStart(weekDate);
+                const weekStart = weekStartFor(weekDate);
 
                 await timeslotManager.createTimeslotConfiguration(
                     weekStart,
@@ -395,7 +394,7 @@ describe('Timeslots Integration Tests', () => {
             for (let i = 0; i < weekCount; i++) {
                 const weekDate = new Date(baseDate);
                 weekDate.setDate(baseDate.getDate() + (i * 7));
-                const weekStart = timeslotManager.getWeekStart(weekDate);
+                const weekStart = weekStartFor(weekDate);
 
                 const weekData = await timeslotManager.getTimeslotsForWeek(weekStart);
                 expect(weekData.config).toBeTruthy();

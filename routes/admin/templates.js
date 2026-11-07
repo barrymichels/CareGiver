@@ -1,3 +1,4 @@
+const { parseWeekStart } = require('../../utils/weekView');
 const express = require('express');
 const { isAuthenticated, isAdmin } = require('../../middleware/auth');
 const TimeslotManager = require('../../utils/timeslotManager');
@@ -160,10 +161,7 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Week start date is required' });
             }
 
-            const weekStartDate = timeslotManager.parseWeekStart(weekStart);
-            if (isNaN(weekStartDate.getTime())) {
-                return res.status(400).json({ error: 'Invalid week start date' });
-            }
+            const weekStartDate = parseWeekStart(weekStart);
 
             if (!timeslotManager.canModifyWeek(weekStartDate)) {
                 return res.status(400).json({ error: 'Cannot modify past weeks' });
@@ -206,10 +204,7 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Week start date is required' });
             }
 
-            const weekStartDate = timeslotManager.parseWeekStart(weekStart);
-            if (isNaN(weekStartDate.getTime())) {
-                return res.status(400).json({ error: 'Invalid week start date' });
-            }
+            const weekStartDate = parseWeekStart(weekStart);
 
             // Get week configuration
             const weekData = await timeslotManager.getTimeslotsForWeek(weekStartDate);

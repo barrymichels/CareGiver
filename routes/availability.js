@@ -2,7 +2,7 @@ const express = require('express');
 const { isAuthenticated, isActive } = require('../middleware/auth');
 const DatabaseHelper = require('../utils/dbHelper');
 const TimeslotManager = require('../utils/timeslotManager');
-const { WEEK_DAYS, weekTitleFor, weekWindowFor } = require('../utils/weekView');
+const { WEEK_DAYS, weekTitleFor, weekWindowFor, weekDatesFor, weekday } = require('../utils/weekView');
 
 module.exports = function (db) {
     // Must stay inside the factory: a module-level router is shared by every require() call,
@@ -19,7 +19,7 @@ module.exports = function (db) {
             // Limit week offset between -1 and 1
             const limitedOffset = Math.max(-1, Math.min(1, weekOffset));
 
-            // Monday..Sunday of the target week, as local calendar strings
+            // Monday..Sunday of the target week, as New York calendar dates
             const { start: targetWeekStart, sqlStart, sqlEnd } = weekWindowFor(limitedOffset);
 
             // Format week title
@@ -60,6 +60,7 @@ module.exports = function (db) {
                 days,
                 weekOffset: limitedOffset,
                 weekTitle,
+                weekDates: weekDatesFor(targetWeekStart),
                 weekStart: targetWeekStart
             });
         } catch (error) {
@@ -100,7 +101,7 @@ module.exports = function (db) {
 
                 // Store preferences
                 const defaultPrefs = availability.map(slot => ({
-                    dayOfWeek: new Date(slot.date + 'T00:00:00Z').getUTCDay(),
+                    dayOfWeek: (weekday(slot.date) + 1) % 7,
                     time: slot.time,
                     isAvailable: slot.isAvailable
                 }));

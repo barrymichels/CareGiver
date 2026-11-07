@@ -96,28 +96,6 @@ app.locals.getPageTitle = getPageTitle;
   }
 })();
 
-// Week and day keys come from the *local* calendar (utils/weekView.js builds
-// `day_date` strings from local date components), and that has only ever been run
-// and reviewed west of UTC - docker-compose.yml sets TZ=America/New_York. East of
-// UTC the local day and the UTC day disagree around midnight, which can put a
-// shift on the neighbouring day. This is a guard, not a fix: the date arithmetic
-// stays as it is, so the warning is what tells an operator to set TZ.
-const localUtcOffsetMinutes = -new Date().getTimezoneOffset();
-if (localUtcOffsetMinutes > 0) {
-  console.error([
-    '',
-    '=============================================================================',
-    '  UNSUPPORTED TIMEZONE - the schedule may be a day off',
-    `  Resolved timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone} ` +
-      `(UTC+${String(Math.floor(localUtcOffsetMinutes / 60)).padStart(2, '0')}:${String(localUtcOffsetMinutes % 60).padStart(2, '0')})`,
-    '  Week and day keys are derived from the local calendar and are only',
-    '  validated for zones west of UTC. Users may see shifts on the wrong day.',
-    '  Fix: set TZ to a zone west of UTC (e.g. TZ=America/New_York) and restart.',
-    '=============================================================================',
-    ''
-  ].join('\n'));
-}
-
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

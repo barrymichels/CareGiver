@@ -1,3 +1,4 @@
+const { weekStartFor, addDays } = require('../../utils/weekView');
 const path = require('path');
 const express = require('express');
 const request = require('supertest');
@@ -39,12 +40,6 @@ describe('Admin authorization', () => {
         'timeslot_templates', 'users'];
 
     const slot = (time, order = 0, day = 0) => ({ day_of_week: day, time, label: time, slot_order: order });
-    const key = date => date.toISOString().slice(0, 10);
-    const shifted = (date, days) => {
-        const result = new Date(date);
-        result.setDate(result.getDate() + days);
-        return result;
-    };
 
     // Row counts rather than contents: the point is that a refused request wrote
     // nothing, and contents would make this suite depend on incidental timestamps.
@@ -92,10 +87,10 @@ describe('Admin authorization', () => {
 
         // The week's own schedule, so the payloads below are the ones the real
         // screens send rather than shapes that would be rejected anyway.
-        currentWeek = manager.getWeekStart(new Date());
-        nextWeek = shifted(currentWeek, 7);
-        currentKey = key(currentWeek);
-        nextKey = key(nextWeek);
+        currentWeek = weekStartFor(new Date());
+        nextWeek = addDays(currentWeek, 7);
+        currentKey = currentWeek;
+        nextKey = nextWeek;
         const week = await manager.createTimeslotConfiguration(
             currentWeek,
             [slot('8:00am'), slot('12:30pm', 1), slot('5:00pm', 2), slot('9:30pm', 3)],

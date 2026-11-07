@@ -1,4 +1,5 @@
 const DatabaseHelper = require('./dbHelper');
+const { parseWeekStart, weekStartFor, addDays, weekday } = require('./weekView');
 const { validateSlots } = require('./slotValidation');
 
 /**
@@ -11,44 +12,18 @@ class TimeslotManager {
         this.dbHelper = new DatabaseHelper(db);
     }
 
-    /**
-     * Get the start of the week (Monday) for a given date
-     * @param {Date} date - The date to get the week start for
-     * @returns {Date} - The Monday of that week
-     */
-    getWeekStart(date) {
-        const weekStart = new Date(date);
-        const currentDay = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-        // For Sunday (day 0), go back 6 days to previous Monday
-        // For Monday through Saturday (days 1-6), go back (day-1) days
-        weekStart.setDate(date.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-        weekStart.setHours(0, 0, 0, 0);
-        return weekStart;
-    }
-
-    /**
-     * Check if a week can be modified (current week or future only)
-     * @param {Date} weekStart - The start date of the week
-     * @returns {boolean} - True if the week can be modified
-     */
+    // Calendar keys are date-only strings; the current week follows New York.
     canModifyWeek(weekStart) {
-        const currentWeekStart = this.getWeekStart(new Date());
-        
-        // Compare date strings to avoid timezone/time precision issues
-        const weekStartStr = weekStart.toISOString().split('T')[0];
-        const currentWeekStartStr = currentWeekStart.toISOString().split('T')[0];
-        
-        
-        return weekStartStr >= currentWeekStartStr;
+        return parseWeekStart(weekStart) >= weekStartFor();
     }
 
     /**
      * Get timeslots for a specific week
-     * @param {Date} weekStart - The start date of the week (Monday)
+     * @param {string} weekStart - The start date of the week (Monday)
      * @returns {Promise<Object>} - Configuration and timeslots data
      */
     async getTimeslotsForWeek(weekStart) {
-        const weekStartStr = weekStart.toISOString().split('T')[0];
+        const weekStartStr = parseWeekStart(weekStart);
         
         // First, try to get existing configuration
         const config = await this.dbHelper.getWithRetry(`
@@ -80,19 +55,6 @@ class TimeslotManager {
         }
 
         return { config: null, timeslots: this.getFallbackTimeslots() };
-    }
-
-    // Date-only API values represent calendar days, not local instants.
-    parseWeekStart(value) {
-        if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-            throw Object.assign(new Error('Invalid week start date'), { status: 400 });
-        }
-        const date = new Date(`${value}T00:00:00Z`);
-        if (isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
-            throw Object.assign(new Error('Invalid week start date'), { status: 400 });
-        }
-        date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
-        return date;
     }
 
     /**
@@ -136,7 +98,7 @@ class TimeslotManager {
 
     /**
      * Create a new timeslot configuration for a week
-     * @param {Date} weekStart - The start date of the week (Monday)
+     * @param {string} weekStart - The start date of the week (Monday)
      * @param {Array} slots - Array of timeslot definitions
      * @param {number} createdBy - User ID who created the configuration
      * @returns {Promise<Object>} - The created configuration and timeslots
@@ -150,12 +112,12 @@ class TimeslotManager {
             'SELECT * FROM timeslot_configurations WHERE id = ?', [configId]
         );
         if (!config) throw new Error('Configuration not found');
-        return this.saveWeek(new Date(config.week_start), slots, config.created_by, options);
+        return this.saveWeek(config.week_start, slots, config.created_by, options);
     }
 
     async saveWeek(weekStart, slots, createdBy, options = {}) {
         if (!this.canModifyWeek(weekStart)) throw new Error('Cannot modify past weeks');
-        const weekStartStr = weekStart.toISOString().slice(0, 10);
+        const weekStartStr = parseWeekStart(weekStart);
         const { templateId = null, templateName = null, usesDefault = false,
             ignoreConflicts = false, onlyIfMissing = false } = options;
 
@@ -232,8 +194,8 @@ class TimeslotManager {
 
     /**
      * Copy timeslots from another week
-     * @param {Date} targetWeekStart - The week to create configuration for
-     * @param {Date} sourceWeekStart - The week to copy from
+     * @param {string} targetWeekStart - The week to create configuration for
+     * @param {string} sourceWeekStart - The week to copy from
      * @param {number} createdBy - User ID who created the configuration
      * @returns {Promise<Object>} - The created configuration and timeslots
      */
@@ -266,7 +228,7 @@ class TimeslotManager {
 
     /**
      * Apply a template to a week
-     * @param {Date} weekStart - The week to apply template to
+     * @param {string} weekStart - The week to apply template to
      * @param {number} templateId - The template ID to apply
      * @param {number} createdBy - User ID who created the configuration
      * @returns {Promise<Object>} - The created configuration and timeslots
@@ -288,12 +250,12 @@ class TimeslotManager {
 
     /**
      * Check for conflicts when changing timeslots
-     * @param {Date} weekStart - The week to check conflicts for
+     * @param {string} weekStart - The week to check conflicts for
      * @returns {Promise<Object>} - Conflict information
      */
     async checkForConflicts(weekStart, slots = null) {
-        const weekStartStr = weekStart.toISOString().split('T')[0];
-        const weekEndStr = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const weekStartStr = parseWeekStart(weekStart);
+        const weekEndStr = addDays(weekStartStr, 6);
         
         // Check for existing availability
         let availabilityConflicts = await this.dbHelper.allWithRetry(`
@@ -314,7 +276,7 @@ class TimeslotManager {
         if (slots) {
             const remaining = new Set(slots.map(slot => `${slot.day_of_week}/${slot.time}`));
             const removed = entry => {
-                const day = (new Date(`${entry.day_date}T00:00:00Z`).getUTCDay() + 6) % 7;
+                const day = weekday(entry.day_date);
                 return !remaining.has(`${day}/${entry.time_slot}`);
             };
             availabilityConflicts = availabilityConflicts.filter(removed);
@@ -330,8 +292,7 @@ class TimeslotManager {
     async validateScheduledSlots(entries) {
         const weeks = new Map();
         for (const entry of entries) {
-            const week = this.parseWeekStart(entry.date);
-            const key = week.toISOString().slice(0, 10);
+            const key = parseWeekStart(entry.date);
             if (!weeks.has(key)) {
                 const config = await this.dbHelper.getWithRetry(
                     'SELECT id FROM timeslot_configurations WHERE week_start = ?', [key]
@@ -342,11 +303,11 @@ class TimeslotManager {
                     )));
                 } else {
                     const template = await this.getDefaultTemplate();
-                    weeks.set(key, template && this.canModifyWeek(week) ?
+                    weeks.set(key, template && this.canModifyWeek(key) ?
                         (await this.getTemplateWithSlots(template.id)).slots : this.getFallbackTimeslots());
                 }
             }
-            const day = (new Date(`${entry.date}T00:00:00Z`).getUTCDay() + 6) % 7;
+            const day = weekday(entry.date);
             if (!weeks.get(key)[day].some(slot => slot.time === entry.time)) {
                 throw Object.assign(new Error('The schedule has changed. Reload this week before saving.'), { status: 409 });
             }
@@ -375,7 +336,7 @@ class TimeslotManager {
         const { template, slots: grouped } = await this.getTemplateWithSlots(templateId);
         const slots = Object.values(grouped).flat();
         if (!slots.length) throw new Error('Template has no slots defined');
-        const currentWeek = this.getWeekStart(new Date()).toISOString().slice(0, 10);
+        const currentWeek = weekStartFor();
         const weeks = await this.dbHelper.allWithRetry(`
             SELECT c.id, c.week_start,
                 (EXISTS (SELECT 1 FROM availability a

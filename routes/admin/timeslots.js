@@ -1,3 +1,4 @@
+const { parseWeekStart } = require('../../utils/weekView');
 const express = require('express');
 const { isAuthenticated, isAdmin } = require('../../middleware/auth');
 const TimeslotManager = require('../../utils/timeslotManager');
@@ -36,10 +37,7 @@ module.exports = function (db) {
      */
     router.get('/:weekStart', isAuthenticated, isAdmin, async (req, res) => {
         try {
-            const weekStart = timeslotManager.parseWeekStart(req.params.weekStart);
-            if (isNaN(weekStart.getTime())) {
-                return res.status(400).json({ error: 'Invalid week start date' });
-            }
+            const weekStart = parseWeekStart(req.params.weekStart);
 
             const weekData = await timeslotManager.getTimeslotsForWeek(weekStart);
             
@@ -65,10 +63,7 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Invalid request data' });
             }
 
-            const weekStartDate = timeslotManager.parseWeekStart(weekStart);
-            if (isNaN(weekStartDate.getTime())) {
-                return res.status(400).json({ error: 'Invalid week start date' });
-            }
+            const weekStartDate = parseWeekStart(weekStart);
 
             if (!timeslotManager.canModifyWeek(weekStartDate)) {
                 return res.status(400).json({ error: 'Cannot modify past weeks' });
@@ -148,12 +143,8 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Target and source week dates are required' });
             }
 
-            const targetDate = timeslotManager.parseWeekStart(targetWeekStart);
-            const sourceDate = timeslotManager.parseWeekStart(sourceWeekStart);
-            
-            if (isNaN(targetDate.getTime()) || isNaN(sourceDate.getTime())) {
-                return res.status(400).json({ error: 'Invalid date format' });
-            }
+            const targetDate = parseWeekStart(targetWeekStart);
+            const sourceDate = parseWeekStart(sourceWeekStart);
 
             if (!timeslotManager.canModifyWeek(targetDate)) {
                 return res.status(400).json({ error: 'Cannot modify past weeks' });
@@ -186,10 +177,7 @@ module.exports = function (db) {
      */
     router.get('/check-conflicts/:weekStart', isAuthenticated, isAdmin, async (req, res) => {
         try {
-            const weekStart = timeslotManager.parseWeekStart(req.params.weekStart);
-            if (isNaN(weekStart.getTime())) {
-                return res.status(400).json({ error: 'Invalid week start date' });
-            }
+            const weekStart = parseWeekStart(req.params.weekStart);
 
             const conflicts = await timeslotManager.checkForConflicts(weekStart);
             res.json(conflicts);
@@ -211,10 +199,7 @@ module.exports = function (db) {
                 return res.status(400).json({ error: 'Week start and template ID are required' });
             }
 
-            const weekStartDate = timeslotManager.parseWeekStart(weekStart);
-            if (isNaN(weekStartDate.getTime())) {
-                return res.status(400).json({ error: 'Invalid week start date' });
-            }
+            const weekStartDate = parseWeekStart(weekStart);
 
             if (!timeslotManager.canModifyWeek(weekStartDate)) {
                 return res.status(400).json({ error: 'Cannot modify past weeks' });
@@ -275,10 +260,7 @@ module.exports = function (db) {
                 return res.status(404).json({ error: 'Configuration not found' });
             }
             
-            const weekStart = new Date(config.week_start);
-            if (isNaN(weekStart.getTime())) {
-                return res.status(400).json({ error: 'Invalid week start date in configuration' });
-            }
+            const weekStart = parseWeekStart(config.week_start);
             
             if (!timeslotManager.canModifyWeek(weekStart)) {
                 return res.status(400).json({ error: "Cannot reset a past week's configuration" });

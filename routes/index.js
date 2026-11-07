@@ -1,7 +1,7 @@
 const express = require('express');
 const { isAuthenticated, isAuthenticatedApi, isActive } = require('../middleware/auth');
 const TimeslotManager = require('../utils/timeslotManager');
-const { weekTitleFor, weekWindowFor } = require('../utils/weekView');
+const { weekTitleFor, weekWindowFor, weekDatesFor } = require('../utils/weekView');
 
 function checkSetupRequired(db) {
     return new Promise((resolve, reject) => {
@@ -70,8 +70,8 @@ module.exports = (db) => {
     // Export calendar endpoint
     router.get('/export-calendar', isAuthenticatedApi, isActive, async (req, res) => {
         try {
-            // Monday..Sunday of the current week, as local calendar strings
-            const { start: weekStart, sqlStart, sqlEnd } = weekWindowFor(0);
+            // Monday..Sunday of the current week, as New York calendar dates
+            const { sqlStart, sqlEnd } = weekWindowFor(0);
 
             // Get user's assignments for the week
             const assignments = await new Promise((resolve, reject) => {
@@ -215,7 +215,8 @@ module.exports = (db) => {
                     weekTitle,
                     weekOffset: limitedOffset,
                     assignments,
-                    weekStart, // Pass the weekStart date to the template
+                    weekDates: weekDatesFor(weekStart),
+                    weekStart, // Date-only Monday
                     weekData // Pass the dynamic timeslots
                 });
             } else {
