@@ -18,6 +18,7 @@ module.exports = {
         'middleware/**/*.js',
         'migrations/**/*.js',
         'public/js/**/*.js',
+        'public/sw.js',
         'routes/**/*.js',
         'scripts/**/*.js',
         'services/**/*.js',

@@ -159,19 +159,15 @@ async function rollback(db) {
     
     try {
         await dbHelper.withTransaction(async () => {
-            // Remove added columns
-            // Note: SQLite doesn't support DROP COLUMN, so we'd need to recreate tables
-            // For now, we'll just clear the new data
-            
+            // Keep the nullable columns, but detach saved records before deleting their slots.
+            await dbHelper.runWithRetry('UPDATE availability SET timeslot_id = NULL');
+            await dbHelper.runWithRetry('UPDATE assignments SET timeslot_id = NULL');
+
             await dbHelper.runWithRetry('DELETE FROM template_slots');
             await dbHelper.runWithRetry('DELETE FROM timeslot_templates');
             await dbHelper.runWithRetry('DELETE FROM timeslots');
             await dbHelper.runWithRetry('DELETE FROM timeslot_configurations');
-            
-            // Reset timeslot_id columns to NULL
-            await dbHelper.runWithRetry('UPDATE availability SET timeslot_id = NULL');
-            await dbHelper.runWithRetry('UPDATE assignments SET timeslot_id = NULL');
-            
+
             console.log('Rollback completed successfully!');
         });
     } catch (error) {

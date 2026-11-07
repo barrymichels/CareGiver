@@ -399,7 +399,7 @@ describe('NotificationService.sendPushNotification with a dead subscription', ()
         await seedSettings(userId, { push_enabled: 1 });
         service = new NotificationService(testDb);
         service.initialized = true;
-        console.error = jest.fn();
+        jest.spyOn(console, 'error').mockImplementation(() => {});
     });
 
     afterEach(() => {
@@ -483,3 +483,134 @@ describe('NotificationService.sendPushNotification with a dead subscription', ()
     });
 });
 
+
+describe('Notification delivery through saved assignments', () => {
+    let service, userId, send, originalEnv;
+    const assignment = (id, date, time) => run(
+        'INSERT INTO assignments (user_id, day_date, time_slot, assigned_by) VALUES (?, ?, ?, ?)',
+        [id, date, time, id]
+    );
+
+    beforeAll(initializeTestDb);
+    beforeEach(async () => {
+        originalEnv = process.env;
+        process.env = { ...originalEnv, ICS_EVENT_SUMMARY: 'Visit Dad', NOTIFICATION_DEBUG: 'false' };
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+        jest.setSystemTime(new Date(2026, 0, 15, 7, 30));
+        jest.spyOn(console, 'log').mockImplementation(() => {});
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        send = jest.spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201 });
+        await clearTestDb();
+        userId = (await createTestUser({ first_name: 'Ada' })).id;
+        await seedSettings(userId, { notification_advance_minutes: 15 });
+        service = new NotificationService(testDb);
+        service.initialized = true;
+    });
+    afterEach(() => {
+        jest.useRealTimers();
+        jest.restoreAllMocks();
+        process.env = originalEnv;
+    });
+
+    it.each([
+        [7, 30, '2026-01-15', '7:45am'],
+        [11, 45, '2026-01-15', '12:00pm'],
+        [16, 45, '2026-01-15', '17:00'],
+        [23, 45, '2026-01-16', '12:00am']
+    ])('delivers a reminder at %i:%i for %s %s', async (hour, minute, date, time) => {
+        jest.setSystemTime(new Date(2026, 0, 15, hour, minute));
+        await assignment(userId, date, time);
+        await assignment(userId, '2026-01-14', time);
+        await assignment(userId, date, '3:13am');
+        await service.checkUpcomingShifts();
+        expect(send).toHaveBeenCalledTimes(1);
+        const [subscription, body, options] = send.mock.calls[0];
+        expect(subscription).toEqual(JSON.parse(SUBSCRIPTION));
+        expect(JSON.parse(body)).toMatchObject({
+            body: `Reminder to Visit Dad at ${time}`,
+            data: { type: 'shift_reminder', date, time, url: '/dashboard' }
+        });
+        expect(options).toMatchObject({ TTL: 3600, urgency: 'high' });
+    });
+
+    it.each([
+        { push_enabled: 0 }, { push_subscription: null }
+    ])('does not send to a user whose settings are %j', async overrides => {
+        await seedSettings(userId, { notification_advance_minutes: 15, ...overrides });
+        await assignment(userId, '2026-01-15', '7:45am');
+        await service.checkUpcomingShifts();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it('does not deliver another user’s assignment or send before initialization', async () => {
+        const other = (await createTestUser()).id;
+        await assignment(other, '2026-01-15', '7:45am');
+        await service.checkUpcomingShifts();
+        expect(send).not.toHaveBeenCalled();
+        await assignment(userId, '2026-01-15', '07:45');
+        service.initialized = false;
+        await service.checkUpcomingShifts();
+        await service.sendMorningSummaries();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it('subscribes and unsubscribes without resetting reminder preferences', async () => {
+        await service.updateNotificationPreferences(userId, { notificationAdvanceMinutes: 60, morningSummaryEnabled: false });
+        const subscription = { endpoint: 'https://push.example.com/replacement', keys: {} };
+        await expect(service.subscribeUser(userId, subscription)).resolves.toBe(true);
+        expect(await getSettings(userId)).toMatchObject({
+            push_subscription: JSON.stringify(subscription), push_enabled: 1,
+            notification_advance_minutes: 60, morning_summary_enabled: 0
+        });
+        await expect(service.unsubscribeUser(userId)).resolves.toBe(true);
+        expect(await getSettings(userId)).toMatchObject({
+            push_subscription: null, push_enabled: 0,
+            notification_advance_minutes: 60, morning_summary_enabled: 0
+        });
+    });
+
+    it('creates subscription settings on first use', async () => {
+        const other = (await createTestUser()).id;
+        await expect(service.subscribeUser(other, JSON.parse(SUBSCRIPTION))).resolves.toBe(true);
+        expect(await service.getNotificationPreferences(other)).toMatchObject({
+            notification_advance_minutes: 15, morning_summary_enabled: 1, push_enabled: 1
+        });
+    });
+
+    it.each([
+        [[], 'No shifts scheduled for today. Enjoy your day!'],
+        [['8:00am'], 'You have 1 shift today at 8:00am'],
+        [['8:00am', '9:30pm'], 'You have 2 shifts today at 8:00am, 9:30pm']
+    ])('composes the summary from today’s assignments (%j)', async (times, body) => {
+        for (const time of times) await assignment(userId, '2026-01-15', time);
+        await assignment(userId, '2026-01-16', '5:00pm');
+        await seedSettings(userId, { morning_summary_enabled: 1, morning_summary_time: '07:30' });
+        await service.sendMorningSummaries();
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(send.mock.calls[0][1])).toMatchObject({
+            title: '🌅 Good morning, Ada!', body, data: { type: 'morning_summary', date: '2026-01-15' }
+        });
+        expect(await countSummaryLog(userId, '2026-01-15')).toBe(1);
+    });
+
+    it.each(['07:25', '07:31', '08:30'])('does not deliver outside the summary window for %s', async time => {
+        await seedSettings(userId, { morning_summary_enabled: 1, morning_summary_time: time });
+        await service.sendMorningSummaries();
+        expect(send).not.toHaveBeenCalled();
+        expect(await countSummaryLog(userId, '2026-01-15')).toBe(0);
+    });
+
+    it('reports subscription persistence failure instead of claiming success', async () => {
+        await expect(service.subscribeUser(-1, JSON.parse(SUBSCRIPTION))).resolves.toBe(false);
+        expect(await getSettings(-1)).toBeUndefined();
+        expect(console.error).toHaveBeenCalledWith(
+            'Error subscribing user to push notifications:', expect.objectContaining({ code: 'SQLITE_CONSTRAINT' })
+        );
+    });
+
+    it.each([null, '{invalid json'])('rejects unusable subscriptions (%j) without a network call', async subscription => {
+        await expect(service.sendPushNotification(subscription, { title: 'Reminder' })).resolves.toBe(false);
+        expect(send).not.toHaveBeenCalled();
+        expect(await getSettings(userId)).toMatchObject({ push_enabled: 1 });
+    });
+});

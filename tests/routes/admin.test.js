@@ -4,7 +4,7 @@ const session = require('express-session');
 const passport = require('passport');
 const path = require('path');
 const { testDb, initializeTestDb } = require('../../config/test.db');
-const { createTestUser, clearTestDb, createAvailability, normalizeViewPath, getAvailability } = require('../helpers/testHelpers');
+const { createTestUser, clearTestDb, createAvailability, normalizeViewPath } = require('../helpers/testHelpers');
 const bcrypt = require('bcrypt');
 
 // Create express app for testing

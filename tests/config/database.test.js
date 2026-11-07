@@ -1,124 +1,46 @@
-const sqlite3 = require('sqlite3');
 const configureDatabase = require('../../config/database');
 const path = require('path');
 const fs = require('fs');
 
-// Mock process.exit before any tests run
-const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {});
-
-// Keep track of all database connections
-const openConnections = new Set();
-
-// Helper function to log open connections
-// function logOpenConnections() {
-//     console.log(`Open connections: ${openConnections.size}`);
-// }
-
-// Helper function to log active timers
-// function logActiveTimers() {
-//     const activeTimers = process._getActiveHandles().filter(handle => handle._onTimeout);
-//     console.log(`Active timers: ${activeTimers.length}`);
-// }
+const os = require('os');
 
 describe('Database Configuration', () => {
     let db;
+    let tmpDir;
+    let tmpDbPath;
+    let mockExit;
     const testDbPath = ':memory:';
-    const tmpDbPath = path.join(__dirname, 'temp.db');
+    const openConnections = new Set();
 
     beforeEach(() => {
-        // Save original console methods
-        console._error = console.error;
-        console._log = console.log;
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wayne-db-test-'));
+        tmpDbPath = path.join(tmpDir, 'test.db');
+        mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(console, 'log').mockImplementation(() => {});
     });
 
     afterEach(async () => {
-        // Log open connections and active timers
-        // logOpenConnections();
-        // logActiveTimers();
-
-        // Restore original console methods
-        console.error = console._error;
-        console.log = console._log;
-        
-        // Close all database connections with a timeout
         try {
-            const closePromises = Array.from(openConnections).map(conn => 
-                new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => {
-                        resolve(); // Don't reject, just resolve to prevent hanging
-                    }, 1000);
-
-                    conn.close((err) => {
-                        clearTimeout(timeout);
-                        if (err) {
-                            console.error('Error closing connection:', err);
-                            resolve(); // Don't reject, just resolve to prevent hanging
-                        } else {
-                            resolve();
-                        }
-                    });
-                })
-            );
-            
-            await Promise.all(closePromises);
-        } catch (err) {
-            console.error('Error in afterEach cleanup:', err);
+            await Promise.all(Array.from(openConnections, conn => new Promise((resolve, reject) => {
+                conn.close(err => err ? reject(err) : resolve());
+            })));
         } finally {
             openConnections.clear();
+            jest.restoreAllMocks();
+            fs.rmSync(tmpDir, { recursive: true, force: true });
         }
-
-        // Clean up temp files
-        [tmpDbPath, `${tmpDbPath}-wal`, `${tmpDbPath}-shm`].forEach(file => {
-            try {
-                if (fs.existsSync(file)) {
-                    fs.unlinkSync(file);
-                }
-            } catch (err) {
-                console.error(`Error cleaning up file ${file}:`, err);
-            }
-        });
-
-        // Clear mock data
-        mockExit.mockClear();
-    }, 10000); // Increase timeout for cleanup
-
-    afterAll(() => {
-        // Restore process.exit
-        mockExit.mockRestore();
     });
 
     it('should configure WAL mode for file-based database', async () => {
-        // Clean up any existing temp db file
-        if (fs.existsSync(tmpDbPath)) {
-            fs.unlinkSync(tmpDbPath);
-        }
-        
         const fileDb = configureDatabase(tmpDbPath);
         openConnections.add(fileDb);
 
-        try {
-            // Wait for database to be ready and configured
-            await new Promise((resolve, reject) => {
-                fileDb.serialize(() => {
-                    fileDb.run('SELECT 1', (err) => {
-                        if (err) reject(err);
-                        else resolve();
-                    });
-                });
-            });
-
-            const journalMode = await new Promise((resolve, reject) => {
-                fileDb.get('PRAGMA journal_mode', (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result.journal_mode);
-                });
-            });
-
-            expect(journalMode).toBe('wal');
-        } finally {
-            await new Promise(resolve => fileDb.close(resolve));
-            openConnections.delete(fileDb);
-        }
+        // The configuration queues its PRAGMAs before this read.
+        const settings = await new Promise((resolve, reject) => {
+            fileDb.get('PRAGMA journal_mode', (err, row) => err ? reject(err) : resolve(row));
+        });
+        expect(settings.journal_mode).toBe('wal');
     });
 
     it('should refuse an unconfigured database path and name the variable', () => {
@@ -130,38 +52,21 @@ describe('Database Configuration', () => {
     });
 
     it('should handle database open errors', async () => {
-        // Mock console.error
-        const mockConsoleError = jest.fn();
-        console.error = mockConsoleError;
-
-        // Try to open database with invalid path
-        const invalidPath = path.join(__filename, 'db.sqlite');
-        
-        db = null;
-        expect(() => {
-            db = configureDatabase(invalidPath);
-            if (db) openConnections.add(db);
-        }).not.toThrow(); // Should handle error gracefully
-
-        // Wait for the error handler to be called
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Verify error was logged and process.exit was called
-        expect(mockConsoleError).toHaveBeenCalledWith(
+        const exited = new Promise(resolve => mockExit.mockImplementation(resolve));
+        // This path cannot be a directory because __filename is a file.
+        configureDatabase(path.join(__filename, 'db.sqlite'));
+        // A failed open never owns a connection to close. Wait for its callback.
+        await expect(exited).resolves.toBe(1);
+        expect(console.error).toHaveBeenCalledWith(
             'Error opening database:',
-            expect.objectContaining({
-                code: 'SQLITE_CANTOPEN',
-                errno: 14
-            })
+            expect.objectContaining({ code: 'SQLITE_CANTOPEN', errno: 14 })
         );
-        expect(mockExit).toHaveBeenCalledWith(1);
-    }, 2000); // Add timeout
+    });
 
     describe('Development Environment', () => {
         const OLD_ENV = process.env;
 
         beforeEach(() => {
-            jest.resetModules();
             process.env = { ...OLD_ENV, NODE_ENV: 'development' };
         });
 
@@ -170,8 +75,7 @@ describe('Database Configuration', () => {
         });
 
         it('should log SQL queries in development', async () => {
-            const mockConsoleLog = jest.fn();
-            console.log = mockConsoleLog;
+            const mockConsoleLog = console.log;
 
             db = configureDatabase(testDbPath);
             openConnections.add(db);
@@ -186,8 +90,7 @@ describe('Database Configuration', () => {
         }, 2000);
 
         it('should log slow queries in development', async () => {
-            const mockConsoleLog = jest.fn();
-            console.log = mockConsoleLog;
+            const mockConsoleLog = console.log;
 
             db = configureDatabase(testDbPath);
             openConnections.add(db);
@@ -202,8 +105,7 @@ describe('Database Configuration', () => {
         }, 2000);
 
         it('should not log fast queries', async () => {
-            const mockConsoleLog = jest.fn();
-            console.log = mockConsoleLog;
+            const mockConsoleLog = console.log;
 
             db = configureDatabase(testDbPath);
             openConnections.add(db);
@@ -219,7 +121,6 @@ describe('Database Configuration', () => {
         const OLD_ENV = process.env;
 
         beforeEach(() => {
-            jest.resetModules();
             process.env = { ...OLD_ENV, NODE_ENV: 'production' };
         });
 
@@ -228,8 +129,7 @@ describe('Database Configuration', () => {
         });
 
         it('should not log SQL queries in production', async () => {
-            const mockConsoleLog = jest.fn();
-            console.log = mockConsoleLog;
+            const mockConsoleLog = console.log;
 
             db = configureDatabase(testDbPath);
             openConnections.add(db);
@@ -241,8 +141,7 @@ describe('Database Configuration', () => {
         }, 2000);
 
         it('should not log slow queries in production', async () => {
-            const mockConsoleLog = jest.fn();
-            console.log = mockConsoleLog;
+            const mockConsoleLog = console.log;
 
             db = configureDatabase(testDbPath);
             openConnections.add(db);

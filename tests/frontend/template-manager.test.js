@@ -1,5 +1,14 @@
-const fs = require('fs');
-const vm = require('vm');
+const browserGlobals = ['document', 'window', 'fetch', 'confirm', 'FormData'];
+let originalGlobals;
+beforeEach(() => {
+    originalGlobals = browserGlobals.map(key => [key, Object.getOwnPropertyDescriptor(global, key)]);
+});
+afterEach(() => {
+    for (const [key, descriptor] of originalGlobals) {
+        if (descriptor) Object.defineProperty(global, key, descriptor);
+        else delete global[key];
+    }
+});
 
 // Exercise the real event handlers and API payloads with a minimal DOM boundary.
 function editor() {
@@ -19,11 +28,13 @@ function editor() {
         slots: { 0: [{ time: '8:00am', label: 'Morning' }], 1: [{ time: '5:00pm', label: 'Evening' }] } }]);
     const fetch = jest.fn(async () => ({ ok: true, json: async () => ({}) }));
     const confirm = jest.fn(() => true);
-    vm.runInNewContext(fs.readFileSync('public/js/template-manager.js', 'utf8'), {
+    Object.assign(global, {
         document: { getElementById: id => node('#' + id), querySelector: node, createElement: tag => ({ tag }), addEventListener() {} },
         window: { addEventListener() {} }, fetch, confirm,
         FormData: class { constructor(data) { this.data = data; } get(k) { return this.data[k] ?? ''; } getAll(k) { return this.data[k] || []; } }
     });
+    // Load through Jest so executed browser code is included in coverage.
+    jest.isolateModules(() => require('../../public/js/template-manager'));
     function click(action, data = {}) {
         node('.template-manager').handlers.click({ target: { closest: () => ({ dataset: { action, ...data } }) } });
     }
@@ -91,4 +102,63 @@ test('default result identifies updated and protected weeks, and permits refresh
     expect(app.html()).toContain('Update empty weeks');
     app.click('default'); await app.submit({});
     expect(app.fetch).toHaveBeenCalledTimes(2);
+});
+
+test.each([
+    [{ redirected: true }, 'session has expired'],
+    [{ ok: true, json: async () => { throw new Error('HTML response'); } }, 'Unable to read'],
+    [{ ok: false, json: async () => ({}) }, 'could not be saved']
+])('a failed save preserves the draft and unlocks the editor (%j)', async (response, message) => {
+    const app = editor(); app.click('open', { id: '11' });
+    app.click('remove-slot', { day: '0', slot: '0' });
+    app.fetch.mockResolvedValueOnce(response);
+    app.click('save'); await app.settle();
+    expect(app.node('#template-status').textContent).toContain(message);
+    expect(app.node('.template-manager').inert).toBe(false);
+    expect(app.node('#draft-status').textContent).toContain('Unsaved');
+    app.click('save'); await app.settle();
+    expect(app.body().slots).toEqual([
+        { day_of_week: 1, time: '5:00pm', label: 'Evening', slot_order: 0 }
+    ]);
+});
+
+test('invalid slot edits remain in the dialog without changing the draft', async () => {
+    const app = editor(); app.click('open', { id: '11' });
+    app.click('add-slot', { day: '0' });
+    await app.submit({ time: '08:00', label: 'Duplicate' });
+    expect(app.node('#template-dialog .dialog-error').textContent).toContain('already exists');
+    expect(app.node('#template-dialog').open).toBe(true);
+    await app.submit({ time: '09:00', label: ' ' });
+    expect(app.node('#template-dialog .dialog-error').textContent).toContain('label is required');
+    app.click('save'); await app.settle();
+    expect(app.body().slots).toHaveLength(2);
+});
+
+test('an empty template cannot be saved', async () => {
+    const app = editor(); app.click('new');
+    await app.submit({ name: 'New schedule' });
+    app.click('save'); await app.settle();
+    expect(app.fetch).not.toHaveBeenCalled();
+    expect(app.node('#template-status').textContent).toContain('at least one timeslot');
+});
+
+test('deleting a non-default template calls the server and returns to the library', async () => {
+    const app = editor(); app.click('open', { id: '11' });
+    app.click('delete');
+    expect(app.fetch).not.toHaveBeenCalled();
+    await app.submit({});
+    expect(app.fetch.mock.calls[0][0]).toBe('/admin/timeslot-templates/11');
+    expect(app.fetch.mock.calls[0][1].method).toBe('DELETE');
+    expect(app.body()).toEqual({ replacementDefaultId: null });
+    expect(app.node('#template-status').textContent).toContain('Template deleted');
+    expect(app.html()).not.toContain('Routine');
+});
+
+test('the only default template cannot be deleted', async () => {
+    const app = editor(); app.click('open', { id: '11' });
+    app.click('default'); await app.submit({});
+    app.fetch.mockClear();
+    app.click('delete');
+    expect(app.node('#template-status').textContent).toContain('Create another template');
+    expect(app.fetch).not.toHaveBeenCalled();
 });
